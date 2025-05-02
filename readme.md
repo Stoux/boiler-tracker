@@ -25,6 +25,8 @@ Ehh, I guess.
 - 6) Publish that result to the MQTT broker
 - 7) Wait & repeat
 
+![State image of 4 lights on in the dark](states/lights_4_dark.jpg)
+
 ### Dependencies
 
 - `paho-mqtt`
