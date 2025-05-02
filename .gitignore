@@ -1,3 +1,7 @@
+# Config
 /.venv
 /.env
+/.idea
+
+# Trash images
 /images
