@@ -1,9 +1,16 @@
+import threading
+from typing import Callable
+
 import paho.mqtt.client as paho
 import os
 import json
 from loguru import logger
 
 has_published_config = False
+_on_force_check_callback: Callable[[], None]|None = None
+
+# Topic called by Home Assistant to force an update
+FORCE_CHECK_TOPIC = "boiler_tracker/action/force_check"
 
 # --- MQTT Callbacks ---
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -23,8 +30,17 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_disconnect(client, userdata, rc, properties=None):
      logger.warning(f"[MQTT] Disconnected from {os.environ['MQTT_BROKER_ADDRESS']} with code {rc}")
 
+def on_message(client, userdata, msg):
+    #logger.info(f"[MQTT] Received message from {msg.topic}: {msg.payload}")
+    # Check if topic is a force check
+    if msg.topic == FORCE_CHECK_TOPIC and _on_force_check_callback is not None:
+        logger.info(f"[MQTT] Force check command received")
+        _on_force_check_callback()
+
+    # Genuinely don't care about anything else.
+
 # -- Main create function -->
-def create_mqtt_client() -> paho.Client:
+def create_mqtt_client( force_check_callback: Callable[[], None] ) -> paho.Client:
     # Resolve env variables
     mqtt_broker_address = os.environ['MQTT_BROKER_ADDRESS']
     mqtt_port = int(os.environ['MQTT_PORT'])
@@ -32,6 +48,9 @@ def create_mqtt_client() -> paho.Client:
     mqtt_password = os.environ['MQTT_PASSWORD']
     mqtt_client_id = os.environ['MQTT_CLIENT_ID']
 
+    # => Set the Threading event
+    global _on_force_check_callback
+    _on_force_check_callback = force_check_callback
 
     # Create MQTT client instance
     client = paho.Client(client_id=mqtt_client_id, protocol=paho.MQTTv5)
@@ -39,6 +58,7 @@ def create_mqtt_client() -> paho.Client:
     # Assign callbacks
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
+    client.on_message = on_message
 
     # Enable MQTT logging (optional - useful for debugging)
     client.enable_logger()
@@ -54,6 +74,8 @@ def create_mqtt_client() -> paho.Client:
         logger.info(f"[MQTT] Connecting to Broker: {mqtt_broker_address}:{mqtt_port}...")
         client.connect(mqtt_broker_address, mqtt_port, keepalive=60)
 
+        # Subscribe to required events
+        client.subscribe(FORCE_CHECK_TOPIC, qos=1)
 
         # Start the network loop in a separate thread. This handles reconnects.
         logger.info("[MQTT] Starting main background loop")
@@ -167,6 +189,21 @@ def publish_config( client: paho.Client ) -> None:
         "device": boiler_device  # Link to the Boiler device
     }
     publish_discovery_config(client, "binary_sensor", error_object_id, "boiler", error_config)
+
+    # 2. Boiler Percentage (sensor)
+    force_check_object_id = "boiler_last_force_check"
+    force_check_state_topic = f"{discovery_prefix}/sensor/boiler/last_force_check/state"
+    force_check_config = {
+        "name": "Boiler Last Force Check",
+        "unique_id": f"{force_check_object_id}_mqtt_auto_01",
+        "state_topic": force_check_state_topic,
+        "device_class": "timestamp",
+        "availability_topic": boiler_availability_topic,
+        "payload_available": availability_online,
+        "payload_not_available": availability_offline,
+        "device": boiler_device
+    }
+    publish_discovery_config(client, "sensor", force_check_object_id, "boiler", force_check_config)
 
     # --- Publish Discovery for Storage Room Light (light) ---
     light_object_id = "storage_room_light"

@@ -1,3 +1,4 @@
+import threading
 import time
 import os
 import sys
@@ -10,6 +11,7 @@ from datetime import datetime
 from lib.analyze import analyze
 from lib.mqtt import create_mqtt_client, publish
 from lib.webcam import start_webcam
+
 
 # Load .env variables
 load_dotenv()
@@ -27,7 +29,12 @@ GENERAL_LIGHT_STATE_TOPIC = "homeassistant/binary_sensor/storage_room/light/stat
 HEATING_STATE_TOPIC = "homeassistant/binary_sensor/boiler/heating/state"
 PERCENTAGE_STATE_TOPIC = "homeassistant/sensor/boiler/percentage/state"
 ERROR_STATE_TOPIC = "homeassistant/binary_sensor/boiler/error/state"
+LAST_FORCE_CHECK_TOPIC = "homeassistant/sensor/boiler/last_force_check/state"
 
+# Create interrupt event to allow MQTT to force an instant check
+force_check_event = threading.Event()
+# Keep track of when to publish the last force check
+should_publish_force_checked = False
 
 def bool_to_state( state: bool ) -> str:
     return "ON" if state else "OFF"
@@ -56,10 +63,19 @@ def lights_to_percentage( lights: int, heating: bool ) -> str:
     exit(1)
 
 
+def on_force_check_callback():
+    """Callback when MQTT receives a message to force check"""
+    logger.info("On force check callback")
+    global force_check_event, should_publish_force_checked
+    should_publish_force_checked = True
+    force_check_event.set()
+
+
 def main_loop(client: paho.Client):
     logger.info(f"[Main] Watch loop started. Checking every {WATCHER_SLEEP_SECONDS} seconds...")
 
-    has_published_config = False
+    # Use the global Thread event
+    global force_check_event, should_publish_force_checked
 
     # Loop indefinitely
     while True:
@@ -94,6 +110,9 @@ def main_loop(client: paho.Client):
             publish(client, ERROR_STATE_TOPIC, bool_to_state(True))
             continue
 
+        # Reset the threading event if a force was called while we were busy
+        force_check_event.clear()
+
         # Otherwise publish the state
         logger.info("[Check] Publishing status")
         publish(client, HEATING_STATE_TOPIC, bool_to_state(status.heating))
@@ -101,8 +120,16 @@ def main_loop(client: paho.Client):
         publish(client, PERCENTAGE_STATE_TOPIC, lights_to_percentage(status.lights_on, status.heating))
         publish(client, ERROR_STATE_TOPIC, bool_to_state(False))
 
-        print(f"[Check] Finished. Sleeping for {WATCHER_SLEEP_SECONDS} seconds...")
-        time.sleep(WATCHER_SLEEP_SECONDS)
+        # Possibly publish the last check state
+        if should_publish_force_checked:
+            publish(client, LAST_FORCE_CHECK_TOPIC, datetime.now().isoformat())
+            should_publish_force_checked = False
+
+        # Wait for the next round (or an interrupt)
+        logger.info(f"[Check] Finished. Sleeping for {WATCHER_SLEEP_SECONDS} seconds...")
+        thread_event_is_set = force_check_event.wait(timeout = WATCHER_SLEEP_SECONDS)
+        if thread_event_is_set:
+            logger.info("[Check] Wait interrupted by MQTT event!")
 
     return True
 
@@ -121,8 +148,10 @@ if __name__ == '__main__':
     camera = None
 
     # Open a connection with the MQTT broker
-    print("[BOOT] => Connecting to MQTT broker")
-    mqtt_client = create_mqtt_client()
+    logger.info("[BOOT] => Connecting to MQTT broker")
+    mqtt_client = create_mqtt_client(
+        force_check_callback = on_force_check_callback
+    )
 
     # We've reached a workable state, enter the main loop
     try:
