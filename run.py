@@ -9,6 +9,7 @@ from datetime import datetime
 
 
 from lib.analyze import analyze
+from lib.errors import run_cleanup
 from lib.mqtt import create_mqtt_client, publish
 from lib.webcam import start_webcam
 
@@ -153,6 +154,16 @@ if __name__ == '__main__':
         force_check_callback = on_force_check_callback
     )
 
+    # Start the error image dir clean up thread
+    logger.info("[BOOT] => Starting error image dir cleaner")
+    error_image_cleanup_event = threading.Event()
+    error_image_cleanup_thread = threading.Thread(
+        target=run_cleanup,
+        args=(error_image_cleanup_event, ),
+        daemon=True
+    )
+    error_image_cleanup_thread.start()
+
     # We've reached a workable state, enter the main loop
     try:
         success = main_loop(mqtt_client)
@@ -163,6 +174,11 @@ if __name__ == '__main__':
         logger.info("[SHUTDOWN] Exiting: Disconnect MQTT")
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
+
+        logger.info(f"[SHUTDOWN] Stopping image dir cleaner")
+        error_image_cleanup_event.set()
+
+
 
     if success:
         logger.info("[SHUTDOWN] Goodbye!")

@@ -6,6 +6,7 @@ import numpy as np
 import collections
 from loguru import logger
 
+from lib.errors import generate_error_image_path
 
 # --- Configuration
 
@@ -205,7 +206,10 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
         if lights_on is None:
             # Invalid value, our upper/lower green bounds configuration is wrong!
             failed_frames += 1
-            cv2.imwrite(f"images/error-{datetime.datetime.now().timestamp()}.jpg", frame)
+            # Enable for debugging
+            error_image = generate_error_image_path()
+            cv2.imwrite(error_image, frame)
+            logger.warning(f"Invalid frame #{frame_index} ({failed_frames}/{NUMBER_OF_FRAMES}): {error_image}")
             continue
 
         # Add to the list of values
