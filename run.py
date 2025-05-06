@@ -1,7 +1,11 @@
 import time
 import os
+import sys
 from dotenv import load_dotenv
 import paho.mqtt.client as paho
+from loguru import logger
+from datetime import datetime
+
 
 from lib.analyze import analyze
 from lib.mqtt import create_mqtt_client, publish
@@ -9,7 +13,14 @@ from lib.webcam import start_webcam
 
 # Load .env variables
 load_dotenv()
-WATCHER_SLEEP_SECONDS=int(os.environ['WATCHER_SLEEP_SECONDS'])
+
+WATCHER_SLEEP_SECONDS=int(os.getenv('WATCHER_SLEEP_SECONDS', "60"))
+LOG_DIR=os.getenv('LOG_DIR', "./logs")
+
+# Configure Loguru
+logger.remove() # Remove default handler to avoid duplicate console output if any
+logger.add(sys.stderr, level="INFO", format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>") # Console output
+logger.add(LOG_DIR + "/app_{time:YYYY-MM-DD}.log", rotation="10 MB", retention="7 days", level="DEBUG", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}") # File output
 
 # Topics
 GENERAL_LIGHT_STATE_TOPIC = "homeassistant/binary_sensor/storage_room/light/state"
@@ -41,12 +52,12 @@ def lights_to_percentage( lights: int, heating: bool ) -> str:
             return "88"
         return "100"
 
-    print(f"Unsupported number of lights: {lights}")
+    logger.info(f"Unsupported number of lights: {lights}")
     exit(1)
 
 
 def main_loop(client: paho.Client):
-    print(f"[Main] Watch loop started. Checking every {WATCHER_SLEEP_SECONDS} seconds...")
+    logger.info(f"[Main] Watch loop started. Checking every {WATCHER_SLEEP_SECONDS} seconds...")
 
     has_published_config = False
 
@@ -54,15 +65,15 @@ def main_loop(client: paho.Client):
     while True:
         # Don't waste resources if we're not connected
         if not client.is_connected():
-            print("[Check] MQTT client is not connected. Skipping analysis.")
+            logger.warning("[Check] MQTT client is not connected. Skipping analysis.")
             time.sleep(5)
             continue
 
         # Load the camera
-        print("[Check] Starting check: Loading camera")
+        logger.info("[Check] Starting check: Loading camera")
         cap = start_webcam()
         if cap is None:
-            print("[Check] Failed to start camera...")
+            logger.warning("[Check] Failed to start camera...")
             return False
 
         # Analyze the result
@@ -73,18 +84,18 @@ def main_loop(client: paho.Client):
 
         # Check if we're still connected
         if not client.is_connected():
-            print("[Check] MQTT client is not connected. Cannot publish.")
+            logger.warning("[Check] MQTT client is not connected. Cannot publish.")
             time.sleep(5)
             continue
 
         # Publish error if we failed to analyse
         if status is None:
-            print("[Check] Failed to analyze status...")
+            logger.warning("[Check] Failed to analyze status...")
             publish(client, ERROR_STATE_TOPIC, bool_to_state(True))
             continue
 
         # Otherwise publish the state
-        print("[Check] Publishing status")
+        logger.info("[Check] Publishing status")
         publish(client, HEATING_STATE_TOPIC, bool_to_state(status.heating))
         publish(client, GENERAL_LIGHT_STATE_TOPIC, bool_to_state(status.general_light_on))
         publish(client, PERCENTAGE_STATE_TOPIC, lights_to_percentage(status.lights_on, status.heating))
@@ -98,10 +109,10 @@ def main_loop(client: paho.Client):
 
 # Main execution!
 if __name__ == '__main__':
-    print("[BOOT] === Starting boiler monitor ===")
+    logger.info("[BOOT] === Starting boiler monitor ===")
 
     # Make sure the webcam is connected & accessible
-    print("[BOOT] => Checking webcam")
+    logger.info("[BOOT] => Checking webcam")
     camera = start_webcam()
     if camera is None:
         exit(1)
@@ -117,16 +128,16 @@ if __name__ == '__main__':
     try:
         success = main_loop(mqtt_client)
     except KeyboardInterrupt:
-        print("[SHUTDOWN] Interrupted by user.")
+        logger.info("[SHUTDOWN] Interrupted by user.")
         success = False
     finally:
-        print("[SHUTDOWN] Exiting: Disconnect MQTT")
+        logger.info("[SHUTDOWN] Exiting: Disconnect MQTT")
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
 
     if success:
-        print("[SHUTDOWN] Goodbye!")
+        logger.info("[SHUTDOWN] Goodbye!")
     else:
-        print("[SHUTDOWN] Exiting with error...")
+        logger.error("[SHUTDOWN] Exiting with error...")
         exit(1)
 

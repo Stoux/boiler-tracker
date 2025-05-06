@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 import collections
+from loguru import logger
 
 
 # --- Configuration
@@ -137,7 +138,7 @@ def determine_number_of_lights_in_frame(frame: cv2.typing.MatLike, lower_green, 
             # Extract ROI
             roi_hsv = hsv_img[y1:y2, x1:x2]
             if roi_hsv.size == 0:
-                print(f"Warning: ROI {light_index} is empty or invalid. {x1} {y1} {x2} {y2}")
+                logger.error(f"ROI {light_index} is empty or invalid. {x1} {y1} {x2} {y2}")
                 return None
 
             # Create mask for green
@@ -153,7 +154,7 @@ def determine_number_of_lights_in_frame(frame: cv2.typing.MatLike, lower_green, 
         if light_is_on:
             # Up the number of lights on.
             if lights_on != light_index:
-                print(f"Warning: Previous light {light_index} was not detected as on while the current is {light_index + 1}. Invalid result!")
+                logger.warning(f"Previous light {light_index} was not detected as on while the current is {light_index + 1}. Invalid result!")
                 return None
             lights_on = light_index + 1
 
@@ -164,18 +165,18 @@ def determine_number_of_lights_in_frame(frame: cv2.typing.MatLike, lower_green, 
 
 def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
     # Fetch an initial image for general flags
-    print("[CHECK] Getting initial image to be used for general checks")
+    logger.info("[CHECK] Getting initial image to be used for general checks")
     ret, frame = cap.read()
     if not ret:
-        print("[CHECK] Error: Failed to capture frame")
+        logger.error("[CHECK] Error: Failed to capture frame")
         return None
 
     # Use that initial image to check the general (room) light
-    print("[CHECK] Checking general light status")
+    logger.info("[CHECK] Checking general light status")
     general_light_on = determine_general_light(frame)
 
     # Use that initial image to determine the "Pressed" state of the boiler button (which heavily increases the brightness of the LEDs; requiring different green thresholds)
-    print(f"[CHECK] Starting analysis over {NUMBER_OF_FRAMES} frames with {TIME_BETWEEN_FRAMES} between frames.")
+    logger.info(f"[CHECK] Starting analysis over {NUMBER_OF_FRAMES} frames with {TIME_BETWEEN_FRAMES} between frames.")
     is_pressed = determine_pressed_state(frame)
 
     # Determine the green bounds based on the previous variables
@@ -196,7 +197,7 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
         # Read a frame
         ret, frame = cap.read()
         if not ret:
-            print("[CHECK] Error: Failed to capture frame")
+            logger.error("[CHECK] Error: Failed to capture frame")
             return None
 
         # Determine the number of lights
@@ -216,13 +217,13 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
 
     # Check if not too many failed values
     if failed_frames > (NUMBER_OF_FRAMES / 4):
-        print("[CHECK] Error: Failed to resolve too many frames?")
+        logger.warning("[CHECK] Error: Failed to resolve too many frames?")
         return None
 
     # Count the number of identical values in the unit
     top_two_values = collections.Counter(determined_light_values).most_common(2)
     if not top_two_values:
-        print("[CHECK] Error: Failed to determine top two values?")
+        logger.error("[CHECK] Error: Failed to determine top two values?")
         return None
 
     # Determine the state
@@ -247,7 +248,7 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
 
             # Those two values should be right next to each other tho.
             if not ( value1 == value2 - 1 ) and not (value1 - 1 == value2):
-                print("[CHECK] Error: Top two determined 'lights on' values are not next to each other. Faulty values?")
+                logger.warning("[CHECK] Error: Top two determined 'lights on' values are not next to each other. Faulty values?")
                 return None
 
     # Assume is fully empty when only 1 light on & not heating

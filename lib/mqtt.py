@@ -1,6 +1,7 @@
 import paho.mqtt.client as paho
 import os
 import json
+from loguru import logger
 
 has_published_config = False
 
@@ -9,7 +10,7 @@ def on_connect(client, userdata, flags, rc, properties=None):
 
     broker = os.environ['MQTT_BROKER_ADDRESS']
     if rc == 0:
-        print(f"[MQTT] Connected to {broker}!")
+        logger.info(f"[MQTT] Connected to {broker}!")
 
         global has_published_config
         if not has_published_config:
@@ -17,10 +18,10 @@ def on_connect(client, userdata, flags, rc, properties=None):
             publish_config(client)
 
     else:
-        print(f"[MQTT] Failed to connect to {broker}: return code {rc}")
+        logger.error(f"[MQTT] Failed to connect to {broker}: return code {rc}")
 
 def on_disconnect(client, userdata, rc, properties=None):
-     print(f"[MQTT] Disconnected from {os.environ['MQTT_BROKER_ADDRESS']} with code {rc}")
+     logger.warning(f"[MQTT] Disconnected from {os.environ['MQTT_BROKER_ADDRESS']} with code {rc}")
 
 # -- Main create function -->
 def create_mqtt_client() -> paho.Client:
@@ -50,16 +51,16 @@ def create_mqtt_client() -> paho.Client:
 
     try:
         # Connect to the broker
-        print(f"[MQTT] Connecting to Broker: {mqtt_broker_address}:{mqtt_port}...")
+        logger.info(f"[MQTT] Connecting to Broker: {mqtt_broker_address}:{mqtt_port}...")
         client.connect(mqtt_broker_address, mqtt_port, keepalive=60)
 
 
         # Start the network loop in a separate thread. This handles reconnects.
-        print("[MQTT] Starting main background loop")
+        logger.info("[MQTT] Starting main background loop")
         client.loop_start()
     except Exception as e:
         # Exit if connection fails initially
-        print(f"[MQTT] Error connecting to Broker: {e}")
+        logger.error(f"[MQTT] Error connecting to Broker: {e}")
         exit(1)
 
     return client
@@ -69,25 +70,25 @@ def publish( mqtt_client: paho.Client, mqtt_topic: str, message: str ) -> None:
     r = mqtt_client.publish(mqtt_topic, payload=message, qos=0)
     r.wait_for_publish(5)
     if r.rc == paho.MQTT_ERR_SUCCESS:
-        print(f"[MQTT] Published to {mqtt_topic}: {message}")
+        logger.info(f"[MQTT] Published to {mqtt_topic}: {message}")
     else:
-        print(f"[MQTT] Failed to publish charging state, return code {r.rc}")
+        logger.warning(f"[MQTT] Failed to publish charging state, return code {r.rc}")
 
 def publish_discovery_config(client, component, object_id, device_name, config_payload):
     """Publishes MQTT Discovery config payload with retain=True."""
     config_topic = f"homeassistant/{component}/{device_name}/{object_id}/config"
     try:
         payload_json = json.dumps(config_payload)
-        print(f"[MQTT] Publishing discovery config to {config_topic}")
+        logger.info(f"[MQTT] Publishing discovery config to {config_topic}")
         # print(f"Payload: {payload_json}") # Uncomment for debugging
         result = client.publish(config_topic, payload=payload_json, qos=1, retain=True)
         result.wait_for_publish(timeout=5) # Wait for publish confirmation
         if result.rc != paho.MQTT_ERR_SUCCESS:
-             print(f"Failed to publish discovery config for {object_id}, error code: {result.rc}")
+             logger.warning(f"Failed to publish discovery config for {object_id}, error code: {result.rc}")
         # else:
         #      print(f"Successfully published discovery for {object_id}")
     except Exception as e:
-        print(f"Error publishing discovery config for {object_id}: {e}")
+        logger.warning(f"Error publishing discovery config for {object_id}: {e}")
 
 
 def publish_config( client: paho.Client ) -> None:
@@ -188,6 +189,6 @@ def publish_config( client: paho.Client ) -> None:
     # Use retain=True so HA sees availability immediately if it restarts
     client.publish(boiler_availability_topic, payload=availability_online, qos=1, retain=True)
     client.publish(light_availability_topic, payload=availability_online, qos=1, retain=True)
-    print("[MQTT] Published initial 'online' availability status.")
+    logger.info("[MQTT] Published initial 'online' availability status.")
 
     return

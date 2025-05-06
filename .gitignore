@@ -5,3 +5,6 @@
 
 # Trash images
 /images
+
+# Logs
+/logs
