@@ -5,7 +5,7 @@ import sys
 from dotenv import load_dotenv
 import paho.mqtt.client as paho
 from loguru import logger
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from lib.analyze import analyze
@@ -123,7 +123,7 @@ def main_loop(client: paho.Client):
 
         # Possibly publish the last check state
         if should_publish_force_checked:
-            publish(client, LAST_FORCE_CHECK_TOPIC, datetime.now().isoformat())
+            publish(client, LAST_FORCE_CHECK_TOPIC, datetime.now(timezone.utc).isoformat())
             should_publish_force_checked = False
 
         # Wait for the next round (or an interrupt)
