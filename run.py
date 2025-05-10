@@ -36,6 +36,8 @@ LAST_FORCE_CHECK_TOPIC = "homeassistant/sensor/boiler/last_force_check/state"
 force_check_event = threading.Event()
 # Keep track of when to publish the last force check
 should_publish_force_checked = False
+# Custom waiting interval (generally used when action is currently happening around the boiler)
+custom_waiting_interval: int = WATCHER_SLEEP_SECONDS
 
 def bool_to_state( state: bool ) -> str:
     return "ON" if state else "OFF"
@@ -71,12 +73,30 @@ def on_force_check_callback():
     should_publish_force_checked = True
     force_check_event.set()
 
+def on_custom_interval_callback(interval: str):
+    """Callback when MQTT receives a message to change the waiting interval"""
+    global custom_waiting_interval
+
+    # Parse the message
+    _interval = int(interval.strip() or "0")
+    if _interval <= 0:
+        logger.info(f"Restoring waiting interval to default ({WATCHER_SLEEP_SECONDS}s)")
+        custom_waiting_interval = WATCHER_SLEEP_SECONDS
+    else:
+        logger.info(f"Custom waiting interval set to {_interval}")
+        custom_waiting_interval = _interval
+
+    # Instantly force a check
+    on_force_check_callback()
+
+
 
 def main_loop(client: paho.Client):
-    logger.info(f"[Main] Watch loop started. Checking every {WATCHER_SLEEP_SECONDS} seconds...")
-
     # Use the global Thread event
-    global force_check_event, should_publish_force_checked
+    global force_check_event, should_publish_force_checked, custom_waiting_interval
+
+    logger.info(f"[Main] Watch loop started. Checking every {custom_waiting_interval} seconds...")
+
 
     # Loop indefinitely
     while True:
@@ -127,8 +147,8 @@ def main_loop(client: paho.Client):
             should_publish_force_checked = False
 
         # Wait for the next round (or an interrupt)
-        logger.info(f"[Check] Finished. Sleeping for {WATCHER_SLEEP_SECONDS} seconds...")
-        thread_event_is_set = force_check_event.wait(timeout = WATCHER_SLEEP_SECONDS)
+        logger.info(f"[Check] Finished. Sleeping for {custom_waiting_interval} seconds...")
+        thread_event_is_set = force_check_event.wait(timeout = custom_waiting_interval)
         if thread_event_is_set:
             logger.info("[Check] Wait interrupted by MQTT event!")
 
@@ -151,7 +171,8 @@ if __name__ == '__main__':
     # Open a connection with the MQTT broker
     logger.info("[BOOT] => Connecting to MQTT broker")
     mqtt_client = create_mqtt_client(
-        force_check_callback = on_force_check_callback
+        force_check_callback = on_force_check_callback,
+        custom_interval_callback = on_custom_interval_callback,
     )
 
     # Start the error image dir clean up thread

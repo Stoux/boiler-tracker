@@ -7,10 +7,13 @@ import json
 from loguru import logger
 
 has_published_config = False
+
 _on_force_check_callback: Callable[[], None]|None = None
+_on_custom_interval_callback: Callable[[str], None]|None = None
 
 # Topic called by Home Assistant to force an update
 FORCE_CHECK_TOPIC = "boiler_tracker/action/force_check"
+CUSTOMER_INTERVAL_TOPIC = "boiler_tracker/setting/custom_interval"
 
 # --- MQTT Callbacks ---
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -37,10 +40,17 @@ def on_message(client, userdata, msg):
         logger.info(f"[MQTT] Force check command received")
         _on_force_check_callback()
 
+    if msg.topic == CUSTOMER_INTERVAL_TOPIC and _on_custom_interval_callback is not None:
+        logger.info(f"[MQTT] Custom interval command received: {msg.payload}")
+        _on_custom_interval_callback(msg.payload)
+
     # Genuinely don't care about anything else.
 
 # -- Main create function -->
-def create_mqtt_client( force_check_callback: Callable[[], None] ) -> paho.Client:
+def create_mqtt_client(
+        force_check_callback: Callable[[], None],
+        custom_interval_callback: Callable[[str], None],
+) -> paho.Client:
     # Resolve env variables
     mqtt_broker_address = os.environ['MQTT_BROKER_ADDRESS']
     mqtt_port = int(os.environ['MQTT_PORT'])
@@ -49,8 +59,9 @@ def create_mqtt_client( force_check_callback: Callable[[], None] ) -> paho.Clien
     mqtt_client_id = os.environ['MQTT_CLIENT_ID']
 
     # => Set the Threading event
-    global _on_force_check_callback
+    global _on_force_check_callback, _on_custom_interval_callback
     _on_force_check_callback = force_check_callback
+    _on_custom_interval_callback = custom_interval_callback
 
     # Create MQTT client instance
     client = paho.Client(client_id=mqtt_client_id, protocol=paho.MQTTv5)
@@ -76,6 +87,7 @@ def create_mqtt_client( force_check_callback: Callable[[], None] ) -> paho.Clien
 
         # Subscribe to required events
         client.subscribe(FORCE_CHECK_TOPIC, qos=1)
+        client.subscribe(CUSTOMER_INTERVAL_TOPIC, qos=1)
 
         # Start the network loop in a separate thread. This handles reconnects.
         logger.info("[MQTT] Starting main background loop")
