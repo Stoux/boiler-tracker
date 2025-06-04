@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import collections
 from loguru import logger
+from typing import List, Tuple, Union, Optional
 
 from lib.errors import generate_error_image_path
 
@@ -71,6 +72,13 @@ DARK_UPPER_GREEN = np.array([95, 255, 255])
 # -- Data class for return status
 
 @dataclass
+class FrameData:
+    """Data for a single frame with its analysis results."""
+    original_frame: cv2.typing.MatLike
+    annotated_frame: cv2.typing.MatLike
+    light_value: Union[str, int]
+
+@dataclass
 class BoilerStatus:
     """The current boiler status."""
     # Whether the boiler is currently heating
@@ -79,6 +87,10 @@ class BoilerStatus:
     lights_on: int
     # Whether the general (room) light is currently on
     general_light_on: bool
+    # List of frames with their annotated versions showing light values
+    frames: List[FrameData]
+    # List of frames with frequency annotations
+    frequency_frames: List[FrameData] = None
 
 # -- Internal functions
 
@@ -192,8 +204,10 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
         upper_green = DARK_UPPER_GREEN
 
     # Starting looping for the given number of frames
-    determined_light_values = []
-    failed_frames = 0
+    determined_light_values: List[int] = []
+    failed_frames: int = 0
+    stored_frames: List[FrameData] = []  # Store frames with their light values
+
     for frame_index in range(NUMBER_OF_FRAMES):
         # Read a frame
         ret, frame = cap.read()
@@ -210,10 +224,20 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
             error_image = generate_error_image_path()
             cv2.imwrite(error_image, frame)
             logger.warning(f"Invalid frame #{frame_index} ({failed_frames}/{NUMBER_OF_FRAMES}): {error_image}")
+
+            # Create a copy with error text
+            annotated_frame = frame.copy()
+            cv2.putText(annotated_frame, "ERROR", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            stored_frames.append(FrameData(original_frame=frame, annotated_frame=annotated_frame, light_value="ERROR"))
             continue
 
         # Add to the list of values
         determined_light_values.append(lights_on)
+
+        # Create a copy with light value text
+        annotated_frame = frame.copy()
+        cv2.putText(annotated_frame, f"Lights: {lights_on}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        stored_frames.append(FrameData(original_frame=frame, annotated_frame=annotated_frame, light_value=lights_on))
 
         # Wait a bit (except on last frame)
         if frame_index != (NUMBER_OF_FRAMES - 1):
@@ -225,7 +249,8 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
         return None
 
     # Count the number of identical values in the unit
-    top_two_values = collections.Counter(determined_light_values).most_common(2)
+    top_values = collections.Counter(determined_light_values)
+    top_two_values = top_values.most_common(2)
     if not top_two_values:
         logger.error("[CHECK] Error: Failed to determine top two values?")
         return None
@@ -259,4 +284,23 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
     if lights_on == 1 and not heating:
         lights_on = 0
 
-    return BoilerStatus(heating, lights_on, general_light_on)
+    # Create frequency-annotated frames
+    frequency_frames = []
+    for light_value, count in top_values.items():
+        # Find the first frame with this light value
+        for frame_data in stored_frames:
+            if frame_data.light_value == light_value:
+                # Create a copy of the frame with frequency annotation
+                frequency_frame = frame_data.annotated_frame.copy()
+                # Add text in the top right corner
+                cv2.putText(frequency_frame, f"{count}x", (frame_data.original_frame.shape[1] - 80, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # Add to the list
+                frequency_frames.append(FrameData(
+                    original_frame=frame_data.original_frame,
+                    annotated_frame=frequency_frame,
+                    light_value=light_value
+                ))
+                break
+
+    return BoilerStatus(heating, lights_on, general_light_on, stored_frames, frequency_frames)

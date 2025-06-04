@@ -217,6 +217,34 @@ def publish_config( client: paho.Client ) -> None:
     }
     publish_discovery_config(client, "sensor", force_check_object_id, "boiler", force_check_config)
 
+    # 3. Boiler Frames URLs (sensor)
+    frames_urls_object_id = "boiler_frames_urls"
+    frames_urls_state_topic = f"{discovery_prefix}/sensor/boiler/frames_urls/state"
+    frames_urls_config = {
+        "name": "Boiler Frames URLs",
+        "unique_id": f"{frames_urls_object_id}_mqtt_auto_01",
+        "state_topic": frames_urls_state_topic,
+        "availability_topic": boiler_availability_topic,
+        "payload_available": availability_online,
+        "payload_not_available": availability_offline,
+        "device": boiler_device
+    }
+    publish_discovery_config(client, "sensor", frames_urls_object_id, "boiler", frames_urls_config)
+
+    # 4. Boiler Frequency Frames URLs (sensor)
+    frequency_frames_urls_object_id = "boiler_frequency_frames_urls"
+    frequency_frames_urls_state_topic = f"{discovery_prefix}/sensor/boiler/frequency_frames_urls/state"
+    frequency_frames_urls_config = {
+        "name": "Boiler Frequency Frames URLs",
+        "unique_id": f"{frequency_frames_urls_object_id}_mqtt_auto_01",
+        "state_topic": frequency_frames_urls_state_topic,
+        "availability_topic": boiler_availability_topic,
+        "payload_available": availability_online,
+        "payload_not_available": availability_offline,
+        "device": boiler_device
+    }
+    publish_discovery_config(client, "sensor", frequency_frames_urls_object_id, "boiler", frequency_frames_urls_config)
+
     # --- Publish Discovery for Storage Room Light (light) ---
     light_object_id = "storage_room_light"
     light_state_topic = f"{discovery_prefix}/binary_sensor/storage_room/light/state"

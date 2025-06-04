@@ -2,6 +2,7 @@ import threading
 import time
 import os
 import sys
+import json
 from dotenv import load_dotenv
 import paho.mqtt.client as paho
 from loguru import logger
@@ -12,7 +13,7 @@ from lib.analyze import analyze
 from lib.errors import run_cleanup
 from lib.mqtt import create_mqtt_client, publish
 from lib.webcam import start_webcam
-
+from lib.http_server import start_http_server, update_status, get_image_urls
 
 # Load .env variables
 load_dotenv()
@@ -31,6 +32,12 @@ HEATING_STATE_TOPIC = "homeassistant/binary_sensor/boiler/heating/state"
 PERCENTAGE_STATE_TOPIC = "homeassistant/sensor/boiler/percentage/state"
 ERROR_STATE_TOPIC = "homeassistant/binary_sensor/boiler/error/state"
 LAST_FORCE_CHECK_TOPIC = "homeassistant/sensor/boiler/last_force_check/state"
+FRAMES_URLS_TOPIC = "homeassistant/sensor/boiler/frames_urls/state"
+FREQUENCY_FRAMES_URLS_TOPIC = "homeassistant/sensor/boiler/frequency_frames_urls/state"
+
+# HTTP server settings
+HTTP_SERVER_PORT = 8800
+BASE_URL = os.getenv('HTTP_URL_PREFIX', f"http://localhost:{HTTP_SERVER_PORT}")
 
 # Create interrupt event to allow MQTT to force an instant check
 force_check_event = threading.Event()
@@ -116,6 +123,11 @@ def main_loop(client: paho.Client):
         # Analyze the result
         status = analyze(cap)
 
+        # TODO: Check if we have had a big change compared to last run
+        # TODO: If yes: run again to verify before pushing it out.
+        # TODO: [NTH] Dump images if we big jump (i.e. 100 -> 0).
+        # // Mostly to combat random
+
         # Release the camera
         cap.release()
 
@@ -134,12 +146,25 @@ def main_loop(client: paho.Client):
         # Reset the threading event if a force was called while we were busy
         force_check_event.clear()
 
+        # Update the HTTP server status
+        logger.info("[Check] Updating HTTP server status")
+        update_status(status)
+
+        # Get image URLs
+        image_urls = get_image_urls(BASE_URL)
+
         # Otherwise publish the state
         logger.info("[Check] Publishing status")
         publish(client, HEATING_STATE_TOPIC, bool_to_state(status.heating))
         publish(client, GENERAL_LIGHT_STATE_TOPIC, bool_to_state(status.general_light_on))
         publish(client, PERCENTAGE_STATE_TOPIC, lights_to_percentage(status.lights_on, status.heating))
         publish(client, ERROR_STATE_TOPIC, bool_to_state(False))
+
+        # Publish image URLs
+        if image_urls["frames"]:
+            publish(client, FRAMES_URLS_TOPIC, json.dumps(image_urls["frames"]))
+        if image_urls["frequency_frames"]:
+            publish(client, FREQUENCY_FRAMES_URLS_TOPIC, json.dumps(image_urls["frequency_frames"]))
 
         # Possibly publish the last check state
         if should_publish_force_checked:
@@ -185,6 +210,11 @@ if __name__ == '__main__':
     )
     error_image_cleanup_thread.start()
 
+    # Start the HTTP server
+    logger.info("[BOOT] => Starting HTTP server on port %d", HTTP_SERVER_PORT)
+    http_server = start_http_server(HTTP_SERVER_PORT)
+    logger.info(f"[BOOT] => HTTP server started at {BASE_URL}")
+
     # We've reached a workable state, enter the main loop
     try:
         success = main_loop(mqtt_client)
@@ -199,6 +229,9 @@ if __name__ == '__main__':
         logger.info(f"[SHUTDOWN] Stopping image dir cleaner")
         error_image_cleanup_event.set()
 
+        logger.info("[SHUTDOWN] Stopping HTTP server")
+        http_server.shutdown()
+
 
 
     if success:
@@ -206,4 +239,3 @@ if __name__ == '__main__':
     else:
         logger.error("[SHUTDOWN] Exiting with error...")
         exit(1)
-
