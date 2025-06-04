@@ -5,7 +5,7 @@ from loguru import logger
 from datetime import datetime
 
 def generate_error_image_path() -> str:
-    return f"{get_error_image_dir()}/error-{datetime.datetime.now().timestamp()}.jpg"
+    return f"{get_error_image_dir()}/error-{datetime.now().timestamp()}.jpg"
 
 def get_error_image_dir() -> Path:
     """Get the path to the configured error image dir"""
