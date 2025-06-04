@@ -148,7 +148,7 @@ def main_loop(client: paho.Client):
 
         # Update the HTTP server status
         logger.info("[Check] Updating HTTP server status")
-        update_status(status)
+        update_status(status, BASE_URL)
 
         # Get image URLs
         image_urls = get_image_urls(BASE_URL)
