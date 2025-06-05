@@ -71,7 +71,8 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
                             <span class="{'heating-on' if historical_status.heating else 'heating-off'}">
                                 Heating: {'Yes' if historical_status.heating else 'No'}
                             </span> | 
-                            <span>General Light: {'On' if historical_status.general_light_on else 'Off'}</span>
+                            <span>General Light: {'On' if historical_status.general_light_on else 'Off'}</span> | 
+                            <a href="{base_url}/images/grid?timestamp={timestamp_str}" target="_blank">View all frames</a>
                         </div>
                     </div>
                 </div>

@@ -26,8 +26,10 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             return
 
         # Route for grid view
-        if self.path == '/images/grid':
-            self.serve_grid_page()
+        grid_match = re.match(r'/images/grid(?:\?timestamp=(\d+))?$', self.path)
+        if grid_match:
+            timestamp_str = grid_match.group(1)  # Will be None if no timestamp parameter
+            self.serve_grid_page(timestamp_str)
             return
 
         # Route for frequency frames
@@ -113,10 +115,16 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
         with status_lock:
             generate_history_page(self, status_history, base_url)
 
-    def serve_grid_page(self):
+    def serve_grid_page(self, timestamp_str=None):
         with status_lock:
-            last_status = status_history.get_last()
-            generate_grid_page(self, last_status, base_url)
+            if timestamp_str:
+                # Get the status with the specified timestamp
+                status = status_history.get_by_timestamp(timestamp_str)
+            else:
+                # Get the last status if no timestamp is specified
+                status = status_history.get_last()
+
+            generate_grid_page(self, status, base_url)
 
 def update_status(status: BoilerStatus, url_prefix: str = None) -> bool:
     """Update the global status and timestamp, and store images in memory."""
