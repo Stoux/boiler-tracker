@@ -22,6 +22,10 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
         if not history:
             handler.send_response(404)
             handler.send_header('Content-type', 'text/plain')
+            # Add no-cache headers
+            handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            handler.send_header('Pragma', 'no-cache')
+            handler.send_header('Expires', '0')
             handler.end_headers()
             handler.wfile.write(b'No history available')
             return
@@ -117,11 +121,19 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
         # Serve the HTML page
         handler.send_response(200)
         handler.send_header('Content-type', 'text/html')
+        # Add no-cache headers
+        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        handler.send_header('Pragma', 'no-cache')
+        handler.send_header('Expires', '0')
         handler.end_headers()
         handler.wfile.write(html_content.encode())
     except Exception as e:
         logger.error(f"Error serving history page: {e}")
         handler.send_response(500)
         handler.send_header('Content-type', 'text/plain')
+        # Add no-cache headers
+        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        handler.send_header('Pragma', 'no-cache')
+        handler.send_header('Expires', '0')
         handler.end_headers()
         handler.wfile.write(f"Server error: {str(e)}".encode())

@@ -63,6 +63,10 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
         # Default response for unknown routes
         self.send_response(404)
         self.send_header('Content-type', 'text/plain')
+        # Add no-cache headers
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
         self.end_headers()
         self.wfile.write(b'Not Found')
 
@@ -92,6 +96,10 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             if not image_data:
                 self.send_response(404)
                 self.send_header('Content-type', 'text/plain')
+                # Add no-cache headers
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
                 self.end_headers()
                 self.wfile.write(b'Image not found')
                 return
@@ -108,6 +116,10 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             logger.error(f"Error serving {'original ' if is_original else ''}image: {e}")
             self.send_response(500)
             self.send_header('Content-type', 'text/plain')
+            # Add no-cache headers
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
             self.end_headers()
             self.wfile.write(f"Server error: {str(e)}".encode())
 
