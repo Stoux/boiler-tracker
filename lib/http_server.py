@@ -48,14 +48,14 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
         frequency_original_match = re.match(r'/images/frequency/original/(\d+)-(\d+)\.jpg', self.path)
         if frequency_original_match:
             timestamp_str, index_str = frequency_original_match.groups()
-            self.serve_original_image('frequency', timestamp_str, index_str)
+            self.serve_image('frequency', timestamp_str, index_str, is_original=True)
             return
 
         # Route for original standard frames
         frames_original_match = re.match(r'/images/frames/original/(\d+)-(\d+)\.jpg', self.path)
         if frames_original_match:
             timestamp_str, index_str = frames_original_match.groups()
-            self.serve_original_image('frames', timestamp_str, index_str)
+            self.serve_image('frames', timestamp_str, index_str, is_original=True)
             return
 
         # Default response for unknown routes
@@ -64,7 +64,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'Not Found')
 
-    def serve_image(self, image_type: str, timestamp_str: str, index_str: str):
+    def serve_image(self, image_type: str, timestamp_str: str, index_str: str, is_original: bool = False):
         try:
             # Construct the image key
             image_key = f"{timestamp_str}-{index_str}.jpg"
@@ -72,9 +72,9 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             # Get the image data from the appropriate dictionary
             image_data = None
             if image_type == 'frames':
-                image_data = frames_images.get(image_key)
+                image_data = frames_original_images.get(image_key) if is_original else frames_images.get(image_key)
             elif image_type == 'frequency':
-                image_data = frequency_images.get(image_key)
+                image_data = frequency_original_images.get(image_key) if is_original else frequency_images.get(image_key)
 
             # Check if the image exists in memory
             if not image_data:
@@ -93,42 +93,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(image_data)
         except Exception as e:
-            logger.error(f"Error serving image: {e}")
-            self.send_response(500)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode())
-
-    def serve_original_image(self, image_type: str, timestamp_str: str, index_str: str):
-        try:
-            # Construct the image key
-            image_key = f"{timestamp_str}-{index_str}.jpg"
-
-            # Get the image data from the appropriate dictionary
-            image_data = None
-            if image_type == 'frames':
-                image_data = frames_original_images.get(image_key)
-            elif image_type == 'frequency':
-                image_data = frequency_original_images.get(image_key)
-
-            # Check if the image exists in memory
-            if not image_data:
-                self.send_response(404)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'Image not found')
-                return
-
-            # Set content type for JPEG
-            content_type = 'image/jpeg'
-
-            # Serve the image from memory
-            self.send_response(200)
-            self.send_header('Content-type', content_type)
-            self.end_headers()
-            self.wfile.write(image_data)
-        except Exception as e:
-            logger.error(f"Error serving original image: {e}")
+            logger.error(f"Error serving {'original ' if is_original else ''}image: {e}")
             self.send_response(500)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
