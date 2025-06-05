@@ -45,6 +45,8 @@ force_check_event = threading.Event()
 should_publish_force_checked = False
 # Custom waiting interval (generally used when action is currently happening around the boiler)
 custom_waiting_interval: int = WATCHER_SLEEP_SECONDS
+# Debug mode state
+debug_mode_enabled = False
 
 def bool_to_state( state: bool ) -> str:
     return "ON" if state else "OFF"
@@ -96,11 +98,26 @@ def on_custom_interval_callback(interval: str):
     # Instantly force a check
     on_force_check_callback()
 
+def on_debug_mode_callback(enabled: bool):
+    """Callback when MQTT receives a message to enable/disable debug mode"""
+    global debug_mode_enabled, force_check_event
+
+    # Update the debug mode state
+    previous_state = debug_mode_enabled
+    debug_mode_enabled = enabled
+
+    logger.info(f"[Debug] Debug mode {'enabled' if enabled else 'disabled'}")
+
+    # If debug mode is being disabled, interrupt any waiting thread
+    if previous_state and not enabled:
+        logger.info("[Debug] Interrupting wait due to debug mode being disabled")
+        force_check_event.set()
+
 
 
 def main_loop(client: paho.Client):
     # Use the global Thread event
-    global force_check_event, should_publish_force_checked, custom_waiting_interval
+    global force_check_event, should_publish_force_checked, custom_waiting_interval, debug_mode_enabled
 
     logger.info(f"[Main] Watch loop started. Checking every {custom_waiting_interval} seconds...")
 
@@ -112,6 +129,18 @@ def main_loop(client: paho.Client):
             logger.warning("[Check] MQTT client is not connected. Skipping analysis.")
             time.sleep(5)
             continue
+
+        # Check if we're in debug mode and should wait indefinitely
+        if debug_mode_enabled and not should_publish_force_checked:
+            logger.info("[Check] Debug mode enabled and no force check requested. Waiting indefinitely...")
+            # Wait indefinitely for a thread interrupt
+            force_check_event.wait()
+            logger.info("[Check] Wait interrupted by MQTT event!")
+            # Reset the event flag
+            force_check_event.clear()
+            # Skip to the next iteration if this was just a debug mode toggle
+            if not should_publish_force_checked:
+                continue
 
         # Load the camera
         logger.info("[Check] Starting check: Loading camera")
@@ -198,6 +227,7 @@ if __name__ == '__main__':
     mqtt_client = create_mqtt_client(
         force_check_callback = on_force_check_callback,
         custom_interval_callback = on_custom_interval_callback,
+        debug_mode_callback = on_debug_mode_callback,
     )
 
     # Start the error image dir clean up thread

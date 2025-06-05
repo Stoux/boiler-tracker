@@ -10,10 +10,12 @@ has_published_config = False
 
 _on_force_check_callback: Callable[[], None]|None = None
 _on_custom_interval_callback: Callable[[str], None]|None = None
+_on_debug_mode_callback: Callable[[bool], None]|None = None
 
 # Topic called by Home Assistant to force an update
 FORCE_CHECK_TOPIC = "boiler_tracker/action/force_check"
 CUSTOMER_INTERVAL_TOPIC = "boiler_tracker/setting/custom_interval"
+DEBUG_MODE_TOPIC = "boiler_tracker/debug/enabled"
 
 # --- MQTT Callbacks ---
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -44,12 +46,19 @@ def on_message(client, userdata, msg):
         logger.info(f"[MQTT] Custom interval command received: {msg.payload}")
         _on_custom_interval_callback(msg.payload)
 
+    if msg.topic == DEBUG_MODE_TOPIC and _on_debug_mode_callback is not None:
+        payload = msg.payload.decode('utf-8').lower()
+        debug_enabled = payload == "true"
+        logger.info(f"[MQTT] Debug mode command received: {debug_enabled}")
+        _on_debug_mode_callback(debug_enabled)
+
     # Genuinely don't care about anything else.
 
 # -- Main create function -->
 def create_mqtt_client(
         force_check_callback: Callable[[], None],
         custom_interval_callback: Callable[[str], None],
+        debug_mode_callback: Callable[[bool], None] = None,
 ) -> paho.Client:
     # Resolve env variables
     mqtt_broker_address = os.environ['MQTT_BROKER_ADDRESS']
@@ -59,9 +68,10 @@ def create_mqtt_client(
     mqtt_client_id = os.environ['MQTT_CLIENT_ID']
 
     # => Set the Threading event
-    global _on_force_check_callback, _on_custom_interval_callback
+    global _on_force_check_callback, _on_custom_interval_callback, _on_debug_mode_callback
     _on_force_check_callback = force_check_callback
     _on_custom_interval_callback = custom_interval_callback
+    _on_debug_mode_callback = debug_mode_callback
 
     # Create MQTT client instance
     client = paho.Client(client_id=mqtt_client_id, protocol=paho.MQTTv5)
@@ -88,6 +98,7 @@ def create_mqtt_client(
         # Subscribe to required events
         client.subscribe(FORCE_CHECK_TOPIC, qos=1)
         client.subscribe(CUSTOMER_INTERVAL_TOPIC, qos=1)
+        client.subscribe(DEBUG_MODE_TOPIC, qos=1)
 
         # Start the network loop in a separate thread. This handles reconnects.
         logger.info("[MQTT] Starting main background loop")
