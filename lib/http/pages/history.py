@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from http.server import BaseHTTPRequestHandler
 from loguru import logger
+from zoneinfo import ZoneInfo
 
 from lib.analyze import BoilerStatus
 from lib.history import StatusHistory
@@ -9,7 +10,7 @@ from lib.history import StatusHistory
 def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHistory, base_url: str):
     """
     Serve a history page showing historical boiler statuses.
-    
+
     Args:
         handler: The HTTP request handler
         status_history: The history of boiler statuses
@@ -55,8 +56,9 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
             timestamp = historical_status.timestamp
             timestamp_str = historical_status.timestamp_str
 
-            # Format timestamp for display
-            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            # Convert timestamp to Europe/Amsterdam timezone and format for display
+            amsterdam_time = timestamp.astimezone(ZoneInfo("Europe/Amsterdam"))
+            formatted_time = amsterdam_time.strftime("%Y-%m-%d %H:%M:%S %Z")
 
             # Create status container
             html_content += f"""
