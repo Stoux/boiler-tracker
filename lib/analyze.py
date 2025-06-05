@@ -92,6 +92,14 @@ class BoilerStatus:
     # List of frames with frequency annotations
     frequency_frames: List[FrameData] = None
 
+@dataclass
+class BoilerErrorStatus:
+    """The current boiler error status."""
+    # List of frames with their annotated versions showing light values
+    frames: List[FrameData]
+    # List of frames with frequency annotations
+    frequency_frames: List[FrameData] = None
+
 # -- Internal functions
 
 def is_percentage_reached(total, count, percentage) -> bool:

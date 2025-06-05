@@ -118,7 +118,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             last_status = status_history.get_last()
             generate_grid_page(self, last_status, base_url)
 
-def update_status(status: BoilerStatus, url_prefix: str = None):
+def update_status(status: BoilerStatus, url_prefix: str = None) -> bool:
     """Update the global status and timestamp, and store images in memory."""
     global base_url, status_history
 
@@ -132,7 +132,7 @@ def update_status(status: BoilerStatus, url_prefix: str = None):
 
     with status_lock:
         # Add status to history
-        status_history.add_status(status, current_time, timestamp_str)
+        return status_history.add_status(status, current_time, timestamp_str)
 
 def get_image_urls() -> Dict[str, List[str]]:
     """Generate URLs for the latest images."""

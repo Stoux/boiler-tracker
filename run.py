@@ -117,7 +117,7 @@ def on_debug_mode_callback(enabled: bool):
 
 def main_loop(client: paho.Client):
     # Use the global Thread event
-    global force_check_event, should_publish_force_checked, custom_waiting_interval, debug_mode_enabled
+    global force_check_event, should_publish_force_checked, custom_waiting_interval, debug_mode_enabled, status_history
 
     logger.info(f"[Main] Watch loop started. Checking every {custom_waiting_interval} seconds...")
 
@@ -177,10 +177,25 @@ def main_loop(client: paho.Client):
 
         # Update the HTTP server status
         logger.info("[Check] Updating HTTP server status")
-        update_status(status, BASE_URL)
+        status_changed = update_status(status, BASE_URL)
 
         # Get image URLs
         image_urls = get_image_urls()
+
+        # Publish image URLs
+        if image_urls["frames"]:
+            publish(client, FRAMES_URLS_TOPIC, json.dumps(image_urls["frames"]))
+        if image_urls["frequency_frames"]:
+            publish(client, FREQUENCY_FRAMES_URLS_TOPIC, json.dumps(image_urls["frequency_frames"]))
+
+        # Check if we've hit a different result than last time
+        if status_changed:
+            # Different! We've got to be 100% sure this it the output. Instantly run again.
+            logger.info('[Check] Status is different from last check. Instantly run again to double check!.')
+            continue
+
+        # We've confirmed the same status at least two times in a row.
+        logger.info("[Check] Status is confirmed at least twice. Update MQTT.")
 
         # Otherwise publish the state
         logger.info("[Check] Publishing status")
@@ -188,12 +203,6 @@ def main_loop(client: paho.Client):
         publish(client, GENERAL_LIGHT_STATE_TOPIC, bool_to_state(status.general_light_on))
         publish(client, PERCENTAGE_STATE_TOPIC, lights_to_percentage(status.lights_on, status.heating))
         publish(client, ERROR_STATE_TOPIC, bool_to_state(False))
-
-        # Publish image URLs
-        if image_urls["frames"]:
-            publish(client, FRAMES_URLS_TOPIC, json.dumps(image_urls["frames"]))
-        if image_urls["frequency_frames"]:
-            publish(client, FREQUENCY_FRAMES_URLS_TOPIC, json.dumps(image_urls["frequency_frames"]))
 
         # Possibly publish the last check state
         if should_publish_force_checked:

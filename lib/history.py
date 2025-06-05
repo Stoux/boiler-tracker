@@ -50,7 +50,7 @@ class StatusHistory:
                 previous_status.lights_on != status.lights_on or
                 previous_status.general_light_on != status.general_light_on)
 
-    def add_status(self, status: BoilerStatus, timestamp: datetime, timestamp_str: str) -> None:
+    def add_status(self, status: BoilerStatus, timestamp: datetime, timestamp_str: str) -> bool:
         """Store the status in memory & add to history if differs fromt he last entry."""
         # Convert into historical entry
         historical_status = HistoricalStatus(
@@ -66,16 +66,22 @@ class StatusHistory:
         self.last = historical_status
         self.last_timestamp_str = timestamp_str
 
-        if self._status_differs_from_previous(status):
-            # Add to the dictionary
-            self.history[timestamp_str] = historical_status
+        if not self._status_differs_from_previous(status):
+            # No Status change
+            return False
 
-            # Move it to the start of the dictionary
-            self.history.move_to_end(timestamp_str, False)
+        # Add to the dictionary
+        self.history[timestamp_str] = historical_status
 
-            # Pop old entries if needed
-            while len(self.history) > self.max_size:
-                self.history.popitem(last=True)
+        # Move it to the start of the dictionary
+        self.history.move_to_end(timestamp_str, False)
+
+        # Pop old entries if needed
+        while len(self.history) > self.max_size:
+            self.history.popitem(last=True)
+
+        # Status changed
+        return True
 
     @staticmethod
     def build_images_from_frames(frames: List[FrameData] | None):
