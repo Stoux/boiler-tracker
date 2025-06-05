@@ -180,7 +180,7 @@ def main_loop(client: paho.Client):
         update_status(status, BASE_URL)
 
         # Get image URLs
-        image_urls = get_image_urls(BASE_URL)
+        image_urls = get_image_urls()
 
         # Otherwise publish the state
         logger.info("[Check] Publishing status")

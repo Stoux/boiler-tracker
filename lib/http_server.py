@@ -1,30 +1,30 @@
 import threading
-import time
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import os
-import cv2
 import re
 from loguru import logger
-from typing import Optional, Dict, List, Tuple, ByteString
-import io
+from typing import Optional, Dict, List
 
 from lib.analyze import BoilerStatus
+from lib.history import StatusHistory, HistoricalImageSet
+from lib.http.pages.grid import serve_grid_page as generate_grid_page
+from lib.http.pages.history import serve_history_page as generate_history_page
 
 # Global variables to store the last status and timestamp
-last_status: Optional[BoilerStatus] = None
-last_timestamp: Optional[datetime] = None
 status_lock = threading.Lock()
 base_url: str = ""  # Global variable to store the base URL
 
-# In-memory storage for images
-frames_images: Dict[str, bytes] = {}  # Annotated frames
-frames_original_images: Dict[str, bytes] = {}  # Original frames
-frequency_images: Dict[str, bytes] = {}  # Annotated frequency frames
-frequency_original_images: Dict[str, bytes] = {}  # Original frequency frames
+# Create a history of boiler statuses
+status_history = StatusHistory(max_size=50)
+
 
 class BoilerHTTPHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Route for history view
+        if self.path == '/images/history':
+            self.serve_history_page()
+            return
+
         # Route for grid view
         if self.path == '/images/grid':
             self.serve_grid_page()
@@ -66,15 +66,25 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
 
     def serve_image(self, image_type: str, timestamp_str: str, index_str: str, is_original: bool = False):
         try:
-            # Construct the image key
-            image_key = f"{timestamp_str}-{index_str}.jpg"
-
-            # Get the image data from the appropriate dictionary
+            # Find the status with that timestamp
             image_data = None
-            if image_type == 'frames':
-                image_data = frames_original_images.get(image_key) if is_original else frames_images.get(image_key)
-            elif image_type == 'frequency':
-                image_data = frequency_original_images.get(image_key) if is_original else frequency_images.get(image_key)
+            status = status_history.get_by_timestamp(timestamp_str)
+            if status:
+                image_set: Optional[HistoricalImageSet] = None
+                if image_type == 'frames':
+                   image_set = status.frames
+                elif image_type == 'frequency':
+                   image_set = status.frequency
+
+                image_frames: Optional[Dict[str, bytes]] = None
+                if image_set:
+                   if is_original:
+                       image_frames = image_set.original
+                   else:
+                       image_frames = image_set.annotated
+
+                if image_frames:
+                    image_data = image_frames.get(index_str)
 
             # Check if the image exists in memory
             if not image_data:
@@ -99,74 +109,18 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f"Server error: {str(e)}".encode())
 
+    def serve_history_page(self):
+        with status_lock:
+            generate_history_page(self, status_history, base_url)
+
     def serve_grid_page(self):
-        try:
-            with status_lock:
-                if not last_status or not last_timestamp:
-                    self.send_response(404)
-                    self.send_header('Content-type', 'text/plain')
-                    self.end_headers()
-                    self.wfile.write(b'No images available')
-                    return
-
-                timestamp_str = str(int(last_timestamp.timestamp()))
-
-                # Generate HTML content
-                html_content = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Boiler Images Grid</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                        .grid-row { display: contents; }
-                        .grid-item { text-align: center; }
-                        img { max-width: 100%; border: 1px solid #ddd; }
-                    </style>
-                </head>
-                <body>
-                    <div class="grid-container">
-                """
-
-                # Add standard frames to the grid
-                if last_status.frames:
-                    for i in range(len(last_status.frames)):
-                        # Use the global base_url for image URLs
-                        original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.jpg"
-                        annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.jpg"
-                        html_content += f"""
-                        <div class="grid-row">
-                            <div class="grid-item">
-                                <img src="{original_url}" alt="Original Frame {i}">
-                            </div>
-                            <div class="grid-item">
-                                <img src="{annotated_url}" alt="Annotated Frame {i}">
-                            </div>
-                        </div>
-                        """
-
-                html_content += """
-                    </div>
-                </body>
-                </html>
-                """
-
-                # Serve the HTML page
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(html_content.encode())
-        except Exception as e:
-            logger.error(f"Error serving grid page: {e}")
-            self.send_response(500)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode())
+        with status_lock:
+            last_status = status_history.get_last()
+            generate_grid_page(self, last_status, base_url)
 
 def update_status(status: BoilerStatus, url_prefix: str = None):
     """Update the global status and timestamp, and store images in memory."""
-    global last_status, last_timestamp, frames_images, frames_original_images, frequency_images, frequency_original_images, base_url
+    global base_url, status_history
 
     # Update base_url if provided
     if url_prefix:
@@ -177,81 +131,48 @@ def update_status(status: BoilerStatus, url_prefix: str = None):
     timestamp_str = str(int(current_time.timestamp()))
 
     with status_lock:
-        # Clear previous images from memory
-        frames_images.clear()
-        frames_original_images.clear()
-        frequency_images.clear()
-        frequency_original_images.clear()
+        # Add status to history
+        status_history.add_status(status, current_time, timestamp_str)
 
-        # Update global variables
-        last_status = status
-        last_timestamp = current_time
-
-        # Store standard frames in memory
-        if status.frames:
-            for i, frame_data in enumerate(status.frames):
-                # Store both original and annotated frames
-                image_key = f"{timestamp_str}-{i}.jpg"
-
-                # Convert annotated frame to bytes
-                is_success, buffer = cv2.imencode(".jpg", frame_data.annotated_frame)
-                if is_success:
-                    frames_images[image_key] = buffer.tobytes()
-
-                # Convert original frame to bytes
-                is_success, buffer = cv2.imencode(".jpg", frame_data.original_frame)
-                if is_success:
-                    frames_original_images[image_key] = buffer.tobytes()
-
-        # Store frequency frames in memory if available
-        if status.frequency_frames:
-            for i, frame_data in enumerate(status.frequency_frames):
-                # Store both original and annotated frames
-                image_key = f"{timestamp_str}-{i}.jpg"
-
-                # Convert annotated frame to bytes
-                is_success, buffer = cv2.imencode(".jpg", frame_data.annotated_frame)
-                if is_success:
-                    frequency_images[image_key] = buffer.tobytes()
-
-                # Convert original frame to bytes
-                is_success, buffer = cv2.imencode(".jpg", frame_data.original_frame)
-                if is_success:
-                    frequency_original_images[image_key] = buffer.tobytes()
-
-def get_image_urls(base_url: str) -> Dict[str, List[str]]:
+def get_image_urls() -> Dict[str, List[str]]:
     """Generate URLs for the latest images."""
+    global base_url
+
     with status_lock:
-        if not last_status or not last_timestamp:
+        last_status = status_history.get_last()
+
+        if not last_status:
             return {"frames": [], "frequency_frames": [], "frames_original": [], "frequency_frames_original": []}
 
-        timestamp_str = str(int(last_timestamp.timestamp()))
+        timestamp_str = last_status.timestamp_str
 
         # Generate URLs for standard frames (annotated versions)
         frame_urls = []
         frame_original_urls = []
-        if last_status.frames:
-            for i in range(len(last_status.frames)):
-                frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.jpg")
-                frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.jpg")
+        for i in range(len(last_status.frames.annotated)):
+            frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.jpg")
+            frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.jpg")
 
         # Generate URLs for frequency frames (annotated versions)
         frequency_urls = []
         frequency_original_urls = []
-        if last_status.frequency_frames:
-            for i in range(len(last_status.frequency_frames)):
-                frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.jpg")
-                frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.jpg")
+        for i in range(len(last_status.frequency.annotated)):
+            frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.jpg")
+            frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.jpg")
 
         # Add grid view URL
         grid_url = f"{base_url}/images/grid"
+
+        # Add history view URL
+        history_url = f"{base_url}/images/history"
 
         return {
             "frames": frame_urls,
             "frames_original": frame_original_urls,
             "frequency_frames": frequency_urls,
             "frequency_frames_original": frequency_original_urls,
-            "grid": [grid_url]
+            "grid": [grid_url],
+            "history": [history_url]
         }
 
 
