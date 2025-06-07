@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from lib.analyze import BoilerStatus
 from lib.history import StatusHistory
 
-def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHistory, base_url: str):
+def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHistory|None, base_url: str, show_saved: bool = False, saved_entries = None):
     """
     Serve a history page showing historical boiler statuses.
 
@@ -15,9 +15,26 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
         handler: The HTTP request handler
         status_history: The history of boiler statuses
         base_url: The base URL for image links
+        show_saved: Whether to show saved entries from disk
+        saved_entries: List of saved entries from disk (if show_saved is True)
     """
     try:
-        history = status_history.get_history()
+        # Determine which history to display
+        if show_saved and saved_entries:
+            history = saved_entries
+            source_text = "Showing saved entries from disk"
+            toggle_text = "Show entries from memory"
+            toggle_url = f"{base_url}/images/history"
+        elif status_history is not None:
+            history = status_history.get_history()
+            source_text = "Showing entries from memory"
+            toggle_text = "Show saved entries from disk"
+            toggle_url = f"{base_url}/images/history?show_saved=1"
+        else:
+            history = []
+            source_text = "No entries available"
+            toggle_text = "Show entries from memory"
+            toggle_url = f"{base_url}/images/history"
 
         if not history:
             handler.send_response(404)
@@ -31,28 +48,56 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
             return
 
         # Generate HTML content
-        html_content = """
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Boiler Status History</title>
             <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .status-container { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-                .status-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
-                .status-info { flex: 1; }
-                .status-timestamp { font-weight: bold; }
-                .status-details { margin-bottom: 10px; }
-                .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .grid-row { display: contents; }
-                .grid-item { text-align: center; }
-                img { max-width: 100%; border: 1px solid #ddd; }
-                .heating-on { color: green; }
-                .heating-off { color: red; }
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .status-container {{ margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }}
+                .status-header {{ display: flex; justify-content: space-between; margin-bottom: 15px; }}
+                .status-info {{ flex: 1; }}
+                .status-timestamp {{ font-weight: bold; }}
+                .status-details {{ margin-bottom: 10px; }}
+                .grid-container {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+                .grid-row {{ display: contents; }}
+                .grid-item {{ text-align: center; }}
+                img {{ max-width: 100%; border: 1px solid #ddd; }}
+                .heating-on {{ color: green; }}
+                .heating-off {{ color: red; }}
+                .button {{
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #4CAF50;
+                    color: white;
+                    text-align: center;
+                    text-decoration: none;
+                    font-size: 16px;
+                    margin: 10px 0;
+                    cursor: pointer;
+                    border: none;
+                    border-radius: 4px;
+                }}
+                .button:hover {{
+                    background-color: #45a049;
+                }}
+                .source-indicator {{
+                    display: inline-block;
+                    padding: 5px 10px;
+                    border-radius: 4px;
+                    background-color: #5bc0de;
+                    color: white;
+                    margin-right: 10px;
+                }}
             </style>
         </head>
         <body>
             <h1>Boiler Status History</h1>
+            <div style="margin-bottom: 20px;">
+                <span class="source-indicator">{source_text}</span>
+                <a href="{toggle_url}" class="button">{toggle_text}</a>
+            </div>
         """
 
         # Add each status to the page

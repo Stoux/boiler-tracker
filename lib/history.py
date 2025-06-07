@@ -4,6 +4,7 @@ from collections import deque
 from typing import Dict, List, Optional, OrderedDict
 
 import cv2
+import numpy as np
 
 from lib.analyze import BoilerStatus, FrameData
 
@@ -28,6 +29,10 @@ class HistoricalStatus:
     # List of jpg encoded frames
     frames: HistoricalImageSet
     frequency: HistoricalImageSet
+    # Lower green HSV threshold used for detection
+    lower_green: np.ndarray = None
+    # Upper green HSV threshold used for detection
+    upper_green: np.ndarray = None
 
 
 class StatusHistory:
@@ -61,6 +66,8 @@ class StatusHistory:
             timestamp_str=timestamp_str,
             frames=self.build_images_from_frames(status.frames),
             frequency=self.build_images_from_frames(status.frequency_frames),
+            lower_green=status.lower_green,
+            upper_green=status.upper_green,
         )
 
         self.last = historical_status
@@ -114,9 +121,8 @@ class StatusHistory:
         if self.last_timestamp_str == timestamp_str:
             return self.last
 
-        history_status = self.history[timestamp_str]
-        if history_status is not None:
-            return history_status
+        if timestamp_str in self.history:
+            return self.history[timestamp_str]
 
         return None
 

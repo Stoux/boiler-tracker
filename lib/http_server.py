@@ -1,4 +1,6 @@
 import threading
+import os
+import json
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
@@ -6,7 +8,7 @@ from loguru import logger
 from typing import Optional, Dict, List
 
 from lib.analyze import BoilerStatus
-from lib.history import StatusHistory, HistoricalImageSet
+from lib.history import StatusHistory, HistoricalImageSet, HistoricalStatus
 from lib.http.pages.grid import serve_grid_page as generate_grid_page
 from lib.http.pages.history import serve_history_page as generate_history_page
 
@@ -21,8 +23,10 @@ status_history = StatusHistory(max_size=50)
 class BoilerHTTPHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Route for history view
-        if self.path == '/images/history':
-            self.serve_history_page()
+        history_match = re.match(r'/images/history(?:\?show_saved=(\d+))?$', self.path)
+        if history_match:
+            show_saved = history_match.group(1) == '1'  # Will be True if show_saved=1, False otherwise
+            self.serve_history_page(show_saved)
             return
 
         # Route for grid view
@@ -30,6 +34,13 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
         if grid_match:
             timestamp_str = grid_match.group(1)  # Will be None if no timestamp parameter
             self.serve_grid_page(timestamp_str)
+            return
+
+        # Route for saving snapshot to disk
+        save_snapshot_match = re.match(r'/images/save_snapshot/(\d+)$', self.path)
+        if save_snapshot_match:
+            timestamp_str = save_snapshot_match.group(1)
+            self.save_snapshot(timestamp_str)
             return
 
         # Route for frequency frames
@@ -92,7 +103,21 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                 if image_frames:
                     image_data = image_frames.get(index_str)
 
-            # Check if the image exists in memory
+            # If not in memory, check if it exists on disk
+            if not image_data:
+                # Determine the file path based on the image type and whether it's original
+                save_dir = f"images/saved/{timestamp_str}"
+                if os.path.exists(save_dir):
+                    file_prefix = "frame" if image_type == 'frames' else "frequency"
+                    file_suffix = "original" if is_original else "annotated"
+                    file_path = f"{save_dir}/{file_prefix}_{index_str}_{file_suffix}.jpg"
+
+                    # Check if the file exists
+                    if os.path.exists(file_path):
+                        with open(file_path, "rb") as f:
+                            image_data = f.read()
+
+            # Check if the image exists in memory or on disk
             if not image_data:
                 self.send_response(404)
                 self.send_header('Content-type', 'text/plain')
@@ -123,20 +148,208 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f"Server error: {str(e)}".encode())
 
-    def serve_history_page(self):
+    def serve_history_page(self, show_saved=False):
         with status_lock:
-            generate_history_page(self, status_history, base_url)
+            if show_saved:
+                # Load all saved entries from disk
+                saved_entries = self.load_all_snapshots_from_disk()
+                generate_history_page(self, None, base_url, show_saved, saved_entries)
+            else:
+                generate_history_page(self, status_history, base_url, show_saved)
 
     def serve_grid_page(self, timestamp_str=None):
         with status_lock:
+            loaded_from_disk = False
             if timestamp_str:
                 # Get the status with the specified timestamp
                 status = status_history.get_by_timestamp(timestamp_str)
+
+                # If not in memory, check if it exists on disk
+                if not status:
+                    status = self.load_snapshot_from_disk(timestamp_str)
+                    if status:
+                        loaded_from_disk = True
             else:
                 # Get the last status if no timestamp is specified
                 status = status_history.get_last()
 
-            generate_grid_page(self, status, base_url)
+            generate_grid_page(self, status, base_url, loaded_from_disk)
+
+    def save_snapshot(self, timestamp_str):
+        """Save all frames and annotated frames of a timestamp to disk."""
+        try:
+            with status_lock:
+                # Get the status with the specified timestamp
+                status = status_history.get_by_timestamp(timestamp_str)
+
+                if not status:
+                    self.send_response(404)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(b'Status not found')
+                    return
+
+                # Create the directory if it doesn't exist
+                save_dir = f"images/saved/{timestamp_str}"
+                os.makedirs(save_dir, exist_ok=True)
+
+                # Save frames
+                if status.frames:
+                    # Save annotated frames
+                    for i, image_data in status.frames.annotated.items():
+                        with open(f"{save_dir}/frame_{i}_annotated.jpg", "wb") as f:
+                            f.write(image_data)
+
+                    # Save original frames
+                    for i, image_data in status.frames.original.items():
+                        with open(f"{save_dir}/frame_{i}_original.jpg", "wb") as f:
+                            f.write(image_data)
+
+                # Save frequency frames if they exist
+                if status.frequency:
+                    # Save annotated frequency frames
+                    for i, image_data in status.frequency.annotated.items():
+                        with open(f"{save_dir}/frequency_{i}_annotated.jpg", "wb") as f:
+                            f.write(image_data)
+
+                    # Save original frequency frames
+                    for i, image_data in status.frequency.original.items():
+                        with open(f"{save_dir}/frequency_{i}_original.jpg", "wb") as f:
+                            f.write(image_data)
+
+                # Save info.json with all HistoricalStatus data
+                info = {
+                    "heating": status.heating,
+                    "lights_on": status.lights_on,
+                    "general_light_on": status.general_light_on,
+                    "timestamp": status.timestamp.isoformat(),
+                    "timestamp_str": status.timestamp_str,
+                    "lower_green": status.lower_green.tolist() if status.lower_green is not None else None,
+                    "upper_green": status.upper_green.tolist() if status.upper_green is not None else None,
+                    "frames": {
+                        "annotated": [f"frame_{i}_annotated.jpg" for i in status.frames.annotated.keys()],
+                        "original": [f"frame_{i}_original.jpg" for i in status.frames.original.keys()]
+                    }
+                }
+
+                if status.frequency:
+                    info["frequency"] = {
+                        "annotated": [f"frequency_{i}_annotated.jpg" for i in status.frequency.annotated.keys()],
+                        "original": [f"frequency_{i}_original.jpg" for i in status.frequency.original.keys()]
+                    }
+
+                with open(f"{save_dir}/info.json", "w") as f:
+                    json.dump(info, f, indent=2)
+
+                # Redirect back to the grid page
+                self.send_response(302)
+                self.send_header('Location', f"{base_url}/images/grid?timestamp={timestamp_str}")
+                self.end_headers()
+
+        except Exception as e:
+            logger.error(f"Error saving snapshot: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(f"Server error: {str(e)}".encode())
+
+    def load_all_snapshots_from_disk(self):
+        """Load all snapshots from disk."""
+        saved_entries = []
+
+        # Check if the saved directory exists
+        if not os.path.exists("images/saved"):
+            return saved_entries
+
+        # Get all subdirectories in the saved directory
+        for timestamp_str in os.listdir("images/saved"):
+            # Check if it's a directory
+            if os.path.isdir(f"images/saved/{timestamp_str}"):
+                # Load the snapshot
+                snapshot = self.load_snapshot_from_disk(timestamp_str)
+                if snapshot:
+                    saved_entries.append(snapshot)
+
+        # Sort by timestamp (newest first)
+        saved_entries.sort(key=lambda x: x.timestamp, reverse=True)
+        return saved_entries
+
+    def load_snapshot_from_disk(self, timestamp_str):
+        """Load a snapshot from disk if it exists."""
+        try:
+            save_dir = f"images/saved/{timestamp_str}"
+
+            # Check if the directory exists
+            if not os.path.exists(save_dir):
+                return None
+
+            # Check if info.json exists
+            info_path = f"{save_dir}/info.json"
+            if not os.path.exists(info_path):
+                return None
+
+            # Load info.json
+            with open(info_path, "r") as f:
+                info = json.load(f)
+
+            # Create HistoricalImageSet for frames
+            frames_annotated = {}
+            frames_original = {}
+
+            # Load annotated frames
+            for i, frame_path in enumerate(info["frames"]["annotated"]):
+                with open(f"{save_dir}/{frame_path}", "rb") as f:
+                    frames_annotated[str(i)] = f.read()
+
+            # Load original frames
+            for i, frame_path in enumerate(info["frames"]["original"]):
+                with open(f"{save_dir}/{frame_path}", "rb") as f:
+                    frames_original[str(i)] = f.read()
+
+            frames = HistoricalImageSet(annotated=frames_annotated, original=frames_original)
+
+            # Create HistoricalImageSet for frequency frames if they exist
+            frequency = None
+            if "frequency" in info:
+                frequency_annotated = {}
+                frequency_original = {}
+
+                # Load annotated frequency frames
+                for i, frame_path in enumerate(info["frequency"]["annotated"]):
+                    with open(f"{save_dir}/{frame_path}", "rb") as f:
+                        frequency_annotated[str(i)] = f.read()
+
+                # Load original frequency frames
+                for i, frame_path in enumerate(info["frequency"]["original"]):
+                    with open(f"{save_dir}/{frame_path}", "rb") as f:
+                        frequency_original[str(i)] = f.read()
+
+                frequency = HistoricalImageSet(annotated=frequency_annotated, original=frequency_original)
+
+            # Convert lower_green and upper_green back to numpy arrays if they exist
+            import numpy as np
+            lower_green = np.array(info["lower_green"]) if info["lower_green"] is not None else None
+            upper_green = np.array(info["upper_green"]) if info["upper_green"] is not None else None
+
+            # Create HistoricalStatus
+            from datetime import datetime
+            timestamp = datetime.fromisoformat(info["timestamp"])
+
+            return HistoricalStatus(
+                heating=info["heating"],
+                lights_on=info["lights_on"],
+                general_light_on=info["general_light_on"],
+                timestamp=timestamp,
+                timestamp_str=info["timestamp_str"],
+                frames=frames,
+                frequency=frequency,
+                lower_green=lower_green,
+                upper_green=upper_green
+            )
+
+        except Exception as e:
+            logger.error(f"Error loading snapshot from disk: {e}")
+            return None
 
 def update_status(status: BoilerStatus, url_prefix: str = None) -> bool:
     """Update the global status and timestamp, and store images in memory."""

@@ -91,6 +91,10 @@ class BoilerStatus:
     frames: List[FrameData]
     # List of frames with frequency annotations
     frequency_frames: List[FrameData] = None
+    # Lower green HSV threshold used for detection
+    lower_green: np.ndarray = None
+    # Upper green HSV threshold used for detection
+    upper_green: np.ndarray = None
 
 @dataclass
 class BoilerErrorStatus:
@@ -311,4 +315,4 @@ def analyze( cap: cv2.VideoCapture ) -> BoilerStatus|None:
                 ))
                 break
 
-    return BoilerStatus(heating, lights_on, general_light_on, stored_frames, frequency_frames)
+    return BoilerStatus(heating, lights_on, general_light_on, stored_frames, frequency_frames, lower_green, upper_green)
