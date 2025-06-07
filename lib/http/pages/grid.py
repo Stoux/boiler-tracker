@@ -109,8 +109,8 @@ def serve_grid_page(handler: BaseHTTPRequestHandler, last_status: Optional[Histo
             """
             for i in range(len(last_status.frames.annotated)):
                 # Use the global base_url for image URLs
-                original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.jpg"
-                annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.jpg"
+                original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.png"
+                annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.png"
                 html_content += f"""
                 <div class="grid-row">
                     <div class="grid-item">
@@ -134,8 +134,8 @@ def serve_grid_page(handler: BaseHTTPRequestHandler, last_status: Optional[Histo
 
             for i in range(len(last_status.frequency.original)):
                 # Use the global base_url for image URLs
-                original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.jpg"
-                annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.jpg"
+                original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png"
+                annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.png"
                 html_content += f"""
                 <div class="grid-row">
                     <div class="grid-item">

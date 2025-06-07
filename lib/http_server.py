@@ -44,28 +44,28 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             return
 
         # Route for frequency frames
-        frequency_match = re.match(r'/images/frequency/(\d+)-(\d+)\.jpg', self.path)
+        frequency_match = re.match(r'/images/frequency/(\d+)-(\d+)\.png', self.path)
         if frequency_match:
             timestamp_str, index_str = frequency_match.groups()
             self.serve_image('frequency', timestamp_str, index_str)
             return
 
         # Route for standard frames
-        frames_match = re.match(r'/images/frames/(\d+)-(\d+)\.jpg', self.path)
+        frames_match = re.match(r'/images/frames/(\d+)-(\d+)\.png', self.path)
         if frames_match:
             timestamp_str, index_str = frames_match.groups()
             self.serve_image('frames', timestamp_str, index_str)
             return
 
         # Route for original frequency frames
-        frequency_original_match = re.match(r'/images/frequency/original/(\d+)-(\d+)\.jpg', self.path)
+        frequency_original_match = re.match(r'/images/frequency/original/(\d+)-(\d+)\.png', self.path)
         if frequency_original_match:
             timestamp_str, index_str = frequency_original_match.groups()
             self.serve_image('frequency', timestamp_str, index_str, is_original=True)
             return
 
         # Route for original standard frames
-        frames_original_match = re.match(r'/images/frames/original/(\d+)-(\d+)\.jpg', self.path)
+        frames_original_match = re.match(r'/images/frames/original/(\d+)-(\d+)\.png', self.path)
         if frames_original_match:
             timestamp_str, index_str = frames_original_match.groups()
             self.serve_image('frames', timestamp_str, index_str, is_original=True)
@@ -110,7 +110,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                 if os.path.exists(save_dir):
                     file_prefix = "frame" if image_type == 'frames' else "frequency"
                     file_suffix = "original" if is_original else "annotated"
-                    file_path = f"{save_dir}/{file_prefix}_{index_str}_{file_suffix}.jpg"
+                    file_path = f"{save_dir}/{file_prefix}_{index_str}_{file_suffix}.png"
 
                     # Check if the file exists
                     if os.path.exists(file_path):
@@ -129,8 +129,8 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b'Image not found')
                 return
 
-            # Set content type for JPEG
-            content_type = 'image/jpeg'
+            # Set content type for PNG
+            content_type = 'image/png'
 
             # Serve the image from memory
             self.send_response(200)
@@ -153,6 +153,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             if show_saved:
                 # Load all saved entries from disk
                 saved_entries = self.load_all_snapshots_from_disk()
+                logger.info(f"Saved {len(saved_entries)} entries | {show_saved}")
                 generate_history_page(self, None, base_url, show_saved, saved_entries)
             else:
                 generate_history_page(self, status_history, base_url, show_saved)
@@ -197,24 +198,24 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                 if status.frames:
                     # Save annotated frames
                     for i, image_data in status.frames.annotated.items():
-                        with open(f"{save_dir}/frame_{i}_annotated.jpg", "wb") as f:
+                        with open(f"{save_dir}/frame_{i}_annotated.png", "wb") as f:
                             f.write(image_data)
 
                     # Save original frames
                     for i, image_data in status.frames.original.items():
-                        with open(f"{save_dir}/frame_{i}_original.jpg", "wb") as f:
+                        with open(f"{save_dir}/frame_{i}_original.png", "wb") as f:
                             f.write(image_data)
 
                 # Save frequency frames if they exist
                 if status.frequency:
                     # Save annotated frequency frames
                     for i, image_data in status.frequency.annotated.items():
-                        with open(f"{save_dir}/frequency_{i}_annotated.jpg", "wb") as f:
+                        with open(f"{save_dir}/frequency_{i}_annotated.png", "wb") as f:
                             f.write(image_data)
 
                     # Save original frequency frames
                     for i, image_data in status.frequency.original.items():
-                        with open(f"{save_dir}/frequency_{i}_original.jpg", "wb") as f:
+                        with open(f"{save_dir}/frequency_{i}_original.png", "wb") as f:
                             f.write(image_data)
 
                 # Save info.json with all HistoricalStatus data
@@ -227,15 +228,15 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                     "lower_green": status.lower_green.tolist() if status.lower_green is not None else None,
                     "upper_green": status.upper_green.tolist() if status.upper_green is not None else None,
                     "frames": {
-                        "annotated": [f"frame_{i}_annotated.jpg" for i in status.frames.annotated.keys()],
-                        "original": [f"frame_{i}_original.jpg" for i in status.frames.original.keys()]
+                        "annotated": [f"frame_{i}_annotated.png" for i in status.frames.annotated.keys()],
+                        "original": [f"frame_{i}_original.png" for i in status.frames.original.keys()]
                     }
                 }
 
                 if status.frequency:
                     info["frequency"] = {
-                        "annotated": [f"frequency_{i}_annotated.jpg" for i in status.frequency.annotated.keys()],
-                        "original": [f"frequency_{i}_original.jpg" for i in status.frequency.original.keys()]
+                        "annotated": [f"frequency_{i}_annotated.png" for i in status.frequency.annotated.keys()],
+                        "original": [f"frequency_{i}_original.png" for i in status.frequency.original.keys()]
                     }
 
                 with open(f"{save_dir}/info.json", "w") as f:
@@ -383,15 +384,15 @@ def get_image_urls() -> Dict[str, List[str]]:
         frame_urls = []
         frame_original_urls = []
         for i in range(len(last_status.frames.annotated)):
-            frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.jpg")
-            frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.jpg")
+            frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.png")
+            frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.png")
 
         # Generate URLs for frequency frames (annotated versions)
         frequency_urls = []
         frequency_original_urls = []
         for i in range(len(last_status.frequency.annotated)):
-            frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.jpg")
-            frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.jpg")
+            frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.png")
+            frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png")
 
         # Add grid view URL
         grid_url = f"{base_url}/images/grid"

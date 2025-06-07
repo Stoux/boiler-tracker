@@ -5,7 +5,7 @@ from loguru import logger
 from datetime import datetime
 
 def generate_error_image_path() -> str:
-    return f"{get_error_image_dir()}/error-{datetime.now().timestamp()}.jpg"
+    return f"{get_error_image_dir()}/error-{datetime.now().timestamp()}.png"
 
 def get_error_image_dir() -> Path:
     """Get the path to the configured error image dir"""
@@ -28,10 +28,10 @@ def get_folder_size(folder_path: Path) -> int:
     return total_size
 
 def parse_timestamp_from_filename(filename: str) -> float|None:
-    """Extracts timestamp from filenames like 'error-{timestamp}.jpg'."""
+    """Extracts timestamp from filenames like 'error-{timestamp}.png'."""
     try:
-        # Assumes format "error-1683390000.12345.jpg"
-        return float(filename.split('-')[1].rsplit('.jpg', 1)[0])
+        # Assumes format "error-1683390000.12345.png"
+        return float(filename.split('-')[1].rsplit('.png', 1)[0])
     except (IndexError, ValueError) as e:
         logger.warning(f"Folder Watcher: Could not parse timestamp from filename: {filename} - {e}")
         return None
@@ -40,7 +40,7 @@ def parse_timestamp_from_filename(filename: str) -> float|None:
 def run_cleanup(stop_event: threading.Event):
     """
       Monitors the configured  folder's size and deletes oldest files if it exceeds max_size_bytes.
-      Files are expected to be named 'error-{timestamp}.jpg'.
+      Files are expected to be named 'error-{timestamp}.png'.
     """
     folder_path = get_error_image_dir()
     logger.info(f"Folder Watcher: Cleanup Thread Started for folder {folder_path}")
@@ -69,7 +69,7 @@ def run_cleanup(stop_event: threading.Event):
 
                 # Attempt to find all current error images, format should have a timestamp in the name
                 files_to_delete = []
-                for item in folder_path.glob("error-*.jpg"):
+                for item in folder_path.glob("error-*.png"):
                     if item.is_file():
                         timestamp = parse_timestamp_from_filename(item.name)
                         if timestamp is not None and timestamp > 0:

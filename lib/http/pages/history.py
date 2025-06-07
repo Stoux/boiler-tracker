@@ -135,8 +135,8 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
 
                 for i in range(len(historical_status.frequency.original)):
                     # Use the global base_url for image URLs
-                    original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.jpg"
-                    annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.jpg"
+                    original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png"
+                    annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.png"
                     html_content += f"""
                     <div class="grid-row">
                         <div class="grid-item">

@@ -92,7 +92,7 @@ class StatusHistory:
 
     @staticmethod
     def build_images_from_frames(frames: List[FrameData] | None):
-        """Build jpg images from the frames"""
+        """Build png images from the frames"""
         annotated: Dict[str, bytes] = {}
         originals: Dict[str, bytes] = {}
         if frames is None:
@@ -103,12 +103,12 @@ class StatusHistory:
             image_key = f"{i}"
 
             # Convert annotated frame to bytes
-            is_success, buffer = cv2.imencode(".jpg", frame_data.annotated_frame)
+            is_success, buffer = cv2.imencode(".png", frame_data.annotated_frame)
             if is_success:
                 annotated[image_key] = buffer.tobytes()
 
             # Convert original frame to bytes
-            is_success, buffer = cv2.imencode(".jpg", frame_data.original_frame)
+            is_success, buffer = cv2.imencode(".png", frame_data.original_frame)
             if is_success:
                 originals[image_key] = buffer.tobytes()
 
