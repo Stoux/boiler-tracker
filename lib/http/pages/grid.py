@@ -1,33 +1,41 @@
 from datetime import datetime
-from typing import Optional
-from http.server import BaseHTTPRequestHandler
+from typing import Optional, Tuple
 from loguru import logger
 from zoneinfo import ZoneInfo
 
 from lib.history import HistoricalStatus
 
-
-def serve_grid_page(handler: BaseHTTPRequestHandler, last_status: Optional[HistoricalStatus], base_url: str, loaded_from_disk: bool = False):
+def serve_grid_page(last_status: Optional[HistoricalStatus], base_url: str, loaded_from_disk: bool = False) -> Tuple[str, int, dict]:
     """
-    Serve a grid page showing original and annotated frames side by side.
+    Generate a grid page showing original and annotated frames side by side.
 
     Args:
-        handler: The HTTP request handler
         last_status: The last boiler status
         base_url: The base URL for image links
         loaded_from_disk: Whether the status was loaded from disk
+
+    Returns:
+        Tuple containing:
+        - HTML content (str)
+        - HTTP status code (int)
+        - Headers dictionary (dict)
     """
     try:
+        # Define common headers
+        headers = {
+            'Content-type': 'text/html',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
+
         if not last_status:
-            handler.send_response(404)
-            handler.send_header('Content-type', 'text/plain')
-            # Add no-cache headers
-            handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            handler.send_header('Pragma', 'no-cache')
-            handler.send_header('Expires', '0')
-            handler.end_headers()
-            handler.wfile.write(b'No images available')
-            return
+            return 'No images available', 404, {
+                'Content-type': 'text/plain',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
 
         timestamp_str = last_status.timestamp_str
 
@@ -156,22 +164,14 @@ def serve_grid_page(handler: BaseHTTPRequestHandler, last_status: Optional[Histo
         </html>
         """
 
-        # Serve the HTML page
-        handler.send_response(200)
-        handler.send_header('Content-type', 'text/html')
-        # Add no-cache headers
-        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        handler.send_header('Pragma', 'no-cache')
-        handler.send_header('Expires', '0')
-        handler.end_headers()
-        handler.wfile.write(html_content.encode())
+        # Return the HTML content, status code, and headers
+        return html_content, 200, headers
     except Exception as e:
         logger.error(f"Error serving grid page: {e}")
-        handler.send_response(500)
-        handler.send_header('Content-type', 'text/plain')
-        # Add no-cache headers
-        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        handler.send_header('Pragma', 'no-cache')
-        handler.send_header('Expires', '0')
-        handler.end_headers()
-        handler.wfile.write(f"Server error: {str(e)}".encode())
+        error_headers = {
+            'Content-type': 'text/plain',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
+        return f"Server error: {str(e)}", 500, error_headers

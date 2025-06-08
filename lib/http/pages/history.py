@@ -1,22 +1,26 @@
 from datetime import datetime
-from typing import Optional
-from http.server import BaseHTTPRequestHandler
+from typing import Optional, Tuple
 from loguru import logger
 from zoneinfo import ZoneInfo
 
 from lib.analyze import BoilerStatus
 from lib.history import StatusHistory
 
-def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHistory|None, base_url: str, show_saved: bool = False, saved_entries = None):
+def serve_history_page(status_history: StatusHistory|None, base_url: str, show_saved: bool = False, saved_entries = None) -> Tuple[str, int, dict]:
     """
-    Serve a history page showing historical boiler statuses.
+    Generate a history page showing historical boiler statuses.
 
     Args:
-        handler: The HTTP request handler
         status_history: The history of boiler statuses
         base_url: The base URL for image links
         show_saved: Whether to show saved entries from disk
         saved_entries: List of saved entries from disk (if show_saved is True)
+
+    Returns:
+        Tuple containing:
+        - HTML content (str)
+        - HTTP status code (int)
+        - Headers dictionary (dict)
     """
     try:
         # Determine which history to display
@@ -36,16 +40,21 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
             toggle_text = "Show entries from memory"
             toggle_url = f"{base_url}/images/history"
 
+        # Define common headers
+        headers = {
+            'Content-type': 'text/html',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
+
         if not history:
-            handler.send_response(404)
-            handler.send_header('Content-type', 'text/plain')
-            # Add no-cache headers
-            handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            handler.send_header('Pragma', 'no-cache')
-            handler.send_header('Expires', '0')
-            handler.end_headers()
-            handler.wfile.write(b'No history available')
-            return
+            return 'No history available', 404, {
+                'Content-type': 'text/plain',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
 
         # Generate HTML content
         html_content = f"""
@@ -163,22 +172,14 @@ def serve_history_page(handler: BaseHTTPRequestHandler, status_history: StatusHi
         </html>
         """
 
-        # Serve the HTML page
-        handler.send_response(200)
-        handler.send_header('Content-type', 'text/html')
-        # Add no-cache headers
-        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        handler.send_header('Pragma', 'no-cache')
-        handler.send_header('Expires', '0')
-        handler.end_headers()
-        handler.wfile.write(html_content.encode())
+        # Return the HTML content, status code, and headers
+        return html_content, 200, headers
     except Exception as e:
         logger.error(f"Error serving history page: {e}")
-        handler.send_response(500)
-        handler.send_header('Content-type', 'text/plain')
-        # Add no-cache headers
-        handler.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        handler.send_header('Pragma', 'no-cache')
-        handler.send_header('Expires', '0')
-        handler.end_headers()
-        handler.wfile.write(f"Server error: {str(e)}".encode())
+        error_headers = {
+            'Content-type': 'text/plain',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
+        return f"Server error: {str(e)}", 500, error_headers
