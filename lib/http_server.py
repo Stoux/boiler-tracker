@@ -10,6 +10,9 @@ from hypercorn.config import Config
 from hypercorn.asyncio import serve
 from loguru import logger
 from typing import Optional, Dict, List, Any, Union
+import cv2
+import numpy as np
+import io
 
 from lib.analyze import BoilerStatus
 from lib.history import StatusHistory, HistoricalImageSet, HistoricalStatus
@@ -29,8 +32,8 @@ app = FastAPI(title="Boiler Tracker")
 
 # Custom response class for serving images with cache headers
 class ImageResponse(Response):
-    def __init__(self, content, *args, **kwargs):
-        super().__init__(content, media_type="image/png", *args, **kwargs)
+    def __init__(self, content, media_type="image/webp", *args, **kwargs):
+        super().__init__(content, media_type=media_type, *args, **kwargs)
         # Allow caching for images with a max age of 1 day (86400 seconds)
         self.headers["Cache-Control"] = "public, max-age=86400"
         # Set an expiration date 1 day in the future
@@ -213,35 +216,74 @@ async def delete_snapshot(timestamp_str: str):
         logger.error(f"Error deleting snapshot: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/images/frames/{timestamp_str}-{index_str}.png")
+@app.get("/images/frames/{timestamp_str}-{index_str}.webp")
+@app.get("/images/frames/{timestamp_str}-{index_str}.png")  # Keep .png endpoint for backward compatibility
 async def serve_frame(timestamp_str: str, index_str: str):
     image_data = get_image_data("frames", timestamp_str, index_str, False)
     if not image_data:
         raise HTTPException(status_code=404, detail="Image not found")
-    return ImageResponse(content=image_data)
+    # Convert PNG to WebP for better performance
+    webp_data = convert_to_webp(image_data)
+    return ImageResponse(content=webp_data)
 
-@app.get("/images/frames/original/{timestamp_str}-{index_str}.png")
+@app.get("/images/frames/original/{timestamp_str}-{index_str}.webp")
+@app.get("/images/frames/original/{timestamp_str}-{index_str}.png")  # Keep .png endpoint for backward compatibility
 async def serve_original_frame(timestamp_str: str, index_str: str):
     image_data = get_image_data("frames", timestamp_str, index_str, True)
     if not image_data:
         raise HTTPException(status_code=404, detail="Image not found")
-    return ImageResponse(content=image_data)
+    # Convert PNG to WebP for better performance
+    webp_data = convert_to_webp(image_data)
+    return ImageResponse(content=webp_data)
 
-@app.get("/images/frequency/{timestamp_str}-{index_str}.png")
+@app.get("/images/frequency/{timestamp_str}-{index_str}.webp")
+@app.get("/images/frequency/{timestamp_str}-{index_str}.png")  # Keep .png endpoint for backward compatibility
 async def serve_frequency(timestamp_str: str, index_str: str):
     image_data = get_image_data("frequency", timestamp_str, index_str, False)
     if not image_data:
         raise HTTPException(status_code=404, detail="Image not found")
-    return ImageResponse(content=image_data)
+    # Convert PNG to WebP for better performance
+    webp_data = convert_to_webp(image_data)
+    return ImageResponse(content=webp_data)
 
-@app.get("/images/frequency/original/{timestamp_str}-{index_str}.png")
+@app.get("/images/frequency/original/{timestamp_str}-{index_str}.webp")
+@app.get("/images/frequency/original/{timestamp_str}-{index_str}.png")  # Keep .png endpoint for backward compatibility
 async def serve_original_frequency(timestamp_str: str, index_str: str):
     image_data = get_image_data("frequency", timestamp_str, index_str, True)
     if not image_data:
         raise HTTPException(status_code=404, detail="Image not found")
-    return ImageResponse(content=image_data)
+    # Convert PNG to WebP for better performance
+    webp_data = convert_to_webp(image_data)
+    return ImageResponse(content=webp_data)
 
 # Helper functions
+def convert_to_webp(image_data: bytes, quality: int = 80) -> bytes:
+    """
+    Convert PNG image data to WebP format with the specified quality.
+
+    Args:
+        image_data: PNG image data as bytes
+        quality: WebP quality (0-100, higher is better quality but larger file size)
+
+    Returns:
+        WebP image data as bytes
+    """
+    try:
+        # Convert bytes to numpy array
+        nparr = np.frombuffer(image_data, np.uint8)
+        # Decode the image
+        img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+
+        # Encode as WebP
+        _, buffer = cv2.imencode('.webp', img, [cv2.IMWRITE_WEBP_QUALITY, quality])
+
+        # Convert to bytes and return
+        return buffer.tobytes()
+    except Exception as e:
+        logger.error(f"Error converting image to WebP: {e}")
+        # Return original image data if conversion fails
+        return image_data
+
 def get_image_data(image_type: str, timestamp_str: str, index_str: str, is_original: bool = False) -> Optional[bytes]:
     try:
         global CachedHistoricalStatus
