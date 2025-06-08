@@ -43,6 +43,13 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             self.save_snapshot(timestamp_str)
             return
 
+        # Route for deleting snapshot from disk
+        delete_snapshot_match = re.match(r'/images/delete_snapshot/(\d+)$', self.path)
+        if delete_snapshot_match:
+            timestamp_str = delete_snapshot_match.group(1)
+            self.delete_snapshot(timestamp_str)
+            return
+
         # Route for frequency frames
         frequency_match = re.match(r'/images/frequency/(\d+)-(\d+)\.png', self.path)
         if frequency_match:
@@ -253,6 +260,40 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.error(f"Error saving snapshot: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(f"Server error: {str(e)}".encode())
+
+    def delete_snapshot(self, timestamp_str):
+        """Delete a snapshot from disk."""
+        try:
+            save_dir = f"images/saved/{timestamp_str}"
+
+            # Check if the directory exists
+            if not os.path.exists(save_dir):
+                self.send_response(404)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Snapshot not found')
+                return
+
+            # Delete all files in the directory
+            for filename in os.listdir(save_dir):
+                file_path = os.path.join(save_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+
+            # Remove the directory
+            os.rmdir(save_dir)
+
+            # Redirect back to the history page with show_saved=1
+            self.send_response(302)
+            self.send_header('Location', f"{base_url}/images/history?show_saved=1")
+            self.end_headers()
+
+        except Exception as e:
+            logger.error(f"Error deleting snapshot: {e}")
             self.send_response(500)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()

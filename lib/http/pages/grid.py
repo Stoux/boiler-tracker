@@ -98,6 +98,7 @@ def serve_grid_page(handler: BaseHTTPRequestHandler, last_status: Optional[Histo
                     </span>
                 </p>
                 <a href="{base_url}/images/save_snapshot/{timestamp_str}" class="button">Save snapshot to disk</a>
+                {loaded_from_disk and f'<a href="{base_url}/images/delete_snapshot/{timestamp_str}" class="button" style="background-color: #d9534f;">Delete snapshot from disk</a>' or ''}
             </div>
         """
 
