@@ -507,15 +507,15 @@ def get_image_urls() -> Dict[str, List[str]]:
     frame_urls = []
     frame_original_urls = []
     for i in range(len(last_status.frames.annotated)):
-        frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.png")
-        frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.png")
+        frame_urls.append(f"{base_url}/images/frames/{timestamp_str}-{i}.webp")
+        frame_original_urls.append(f"{base_url}/images/frames/original/{timestamp_str}-{i}.webp")
 
     # Generate URLs for frequency frames (annotated versions)
     frequency_urls = []
     frequency_original_urls = []
     for i in range(len(last_status.frequency.annotated)):
-        frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.png")
-        frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png")
+        frequency_urls.append(f"{base_url}/images/frequency/{timestamp_str}-{i}.webp")
+        frequency_original_urls.append(f"{base_url}/images/frequency/original/{timestamp_str}-{i}.webp")
 
     # Add grid view URL
     grid_url = f"{base_url}/images/grid"
@@ -551,7 +551,13 @@ def start_http_server(port: int = 8800) -> Any:
     """Start the HTTP server in a separate thread."""
     config = Config()
     config.bind = [f"0.0.0.0:{port}"]
+    # TODO: Except, traffic between Proxy & this thing is non-ssl so probably just going to be HTTP/1 :')
     config.alpn_protocols = ["h3", "h2", "http/1.1"]  # Support HTTP/3, HTTP/2, and HTTP/1.1
+    # TODO: Bumped these numbers but doesn't do much. Should™ get into the details of how these libs actually work.
+    config.workers = 10  # Increase number of worker processes
+    config.worker_class = "asyncio"  # Use asyncio worker class
+    config.max_requests = 1000  # Increase max requests per worker
+    config.keep_alive_timeout = 120  # Increase keep-alive timeout
 
     server = HTTP3Server(app, "0.0.0.0", port)
 

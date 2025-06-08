@@ -43,12 +43,33 @@ def serve_grid_page(last_status: Optional[HistoricalStatus], base_url: str, load
         amsterdam_time = last_status.timestamp.astimezone(ZoneInfo("Europe/Amsterdam"))
         formatted_time = amsterdam_time.strftime("%Y-%m-%d %H:%M:%S %Z")
 
+        # Generate preload tags for all images
+        preload_tags = ""
+
+        # Add preload tags for standard frames
+        if last_status.frames:
+            for i in range(len(last_status.frames.annotated)):
+                original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.webp"
+                annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.webp"
+                preload_tags += f'<link rel="preload" href="{original_url}" as="image" type="image/webp">\n'
+                preload_tags += f'<link rel="preload" href="{annotated_url}" as="image" type="image/webp">\n'
+
+        # Add preload tags for frequency frames if available
+        if last_status.frequency and last_status.frequency.original:
+            for i in range(len(last_status.frequency.original)):
+                original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.webp"
+                annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.webp"
+                preload_tags += f'<link rel="preload" href="{original_url}" as="image" type="image/webp">\n'
+                preload_tags += f'<link rel="preload" href="{annotated_url}" as="image" type="image/webp">\n'
+
         # Generate HTML content
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Boiler Images Grid</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            {preload_tags}
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .grid-container {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
@@ -118,8 +139,8 @@ def serve_grid_page(last_status: Optional[HistoricalStatus], base_url: str, load
             """
             for i in range(len(last_status.frames.annotated)):
                 # Use the global base_url for image URLs
-                original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.png"
-                annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.png"
+                original_url = f"{base_url}/images/frames/original/{timestamp_str}-{i}.webp"
+                annotated_url = f"{base_url}/images/frames/{timestamp_str}-{i}.webp"
                 html_content += f"""
                 <div class="grid-row">
                     <div class="grid-item">
@@ -143,8 +164,8 @@ def serve_grid_page(last_status: Optional[HistoricalStatus], base_url: str, load
 
             for i in range(len(last_status.frequency.original)):
                 # Use the global base_url for image URLs
-                original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png"
-                annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.png"
+                original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.webp"
+                annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.webp"
                 html_content += f"""
                 <div class="grid-row">
                     <div class="grid-item">

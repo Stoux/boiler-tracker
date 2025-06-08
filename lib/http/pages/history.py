@@ -56,12 +56,27 @@ def serve_history_page(status_history: StatusHistory|None, base_url: str, show_s
                 'Expires': '0'
             }
 
+        # Generate preload tags for all images
+        preload_tags = ""
+
+        # Add preload tags for frequency frames in each historical status
+        for historical_status in history:
+            timestamp_str = historical_status.timestamp_str
+            if historical_status.frequency.original:
+                for i in range(len(historical_status.frequency.original)):
+                    original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.webp"
+                    annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.webp"
+                    preload_tags += f'<link rel="preload" href="{original_url}" as="image" type="image/webp">\n'
+                    preload_tags += f'<link rel="preload" href="{annotated_url}" as="image" type="image/webp">\n'
+
         # Generate HTML content
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Boiler Status History</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            {preload_tags}
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .status-container {{ margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }}
@@ -144,8 +159,8 @@ def serve_history_page(status_history: StatusHistory|None, base_url: str, show_s
 
                 for i in range(len(historical_status.frequency.original)):
                     # Use the global base_url for image URLs
-                    original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.png"
-                    annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.png"
+                    original_url = f"{base_url}/images/frequency/original/{timestamp_str}-{i}.webp"
+                    annotated_url = f"{base_url}/images/frequency/{timestamp_str}-{i}.webp"
                     html_content += f"""
                     <div class="grid-row">
                         <div class="grid-item">
