@@ -2,7 +2,7 @@ import threading
 import os
 import json
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 import re
 from loguru import logger
 from typing import Optional, Dict, List
@@ -11,9 +11,11 @@ from lib.analyze import BoilerStatus
 from lib.history import StatusHistory, HistoricalImageSet, HistoricalStatus
 from lib.http.pages.grid import serve_grid_page as generate_grid_page
 from lib.http.pages.history import serve_history_page as generate_history_page
+from lib.rwlock import RWLock, ReadLockContext, WriteLockContext
+
 
 # Global variables to store the last status and timestamp
-status_lock = threading.Lock()
+status_lock = RWLock()
 base_url: str = ""  # Global variable to store the base URL
 
 # Create a history of boiler statuses
@@ -160,7 +162,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(f"Server error: {str(e)}".encode())
 
     def serve_history_page(self, show_saved=False):
-        with status_lock:
+        with status_lock.read_lock():
             if show_saved:
                 # Load all saved entries from disk
                 saved_entries = self.load_all_snapshots_from_disk()
@@ -170,7 +172,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
                 generate_history_page(self, status_history, base_url, show_saved)
 
     def serve_grid_page(self, timestamp_str=None):
-        with status_lock:
+        with status_lock.read_lock():
             loaded_from_disk = False
             if timestamp_str:
                 # Get the status with the specified timestamp
@@ -190,7 +192,7 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
     def save_snapshot(self, timestamp_str):
         """Save all frames and annotated frames of a timestamp to disk."""
         try:
-            with status_lock:
+            with status_lock.read_lock():
                 # Get the status with the specified timestamp
                 status = status_history.get_by_timestamp(timestamp_str)
 
@@ -409,7 +411,7 @@ def update_status(status: BoilerStatus, url_prefix: str = None) -> bool:
     current_time = datetime.now(timezone.utc)
     timestamp_str = str(int(current_time.timestamp()))
 
-    with status_lock:
+    with status_lock.write_lock():
         # Add status to history
         return status_history.add_status(status, current_time, timestamp_str)
 
@@ -417,7 +419,7 @@ def get_image_urls() -> Dict[str, List[str]]:
     """Generate URLs for the latest images."""
     global base_url
 
-    with status_lock:
+    with status_lock.read_lock():
         last_status = status_history.get_last()
 
         if not last_status:
@@ -455,10 +457,10 @@ def get_image_urls() -> Dict[str, List[str]]:
         }
 
 
-def start_http_server(port: int = 8800) -> HTTPServer:
+def start_http_server(port: int = 8800) -> ThreadingHTTPServer:
     """Start the HTTP server in a separate thread."""
     server_address = ('', port)
-    httpd = HTTPServer(server_address, BoilerHTTPHandler)
+    httpd = ThreadingHTTPServer(server_address, BoilerHTTPHandler)
 
     # Start the server in a separate thread
     server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
