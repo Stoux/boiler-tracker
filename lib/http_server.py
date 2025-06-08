@@ -135,6 +135,10 @@ class BoilerHTTPHandler(BaseHTTPRequestHandler):
             # Serve the image from memory
             self.send_response(200)
             self.send_header('Content-type', content_type)
+            # Add no-cache headers
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
             self.end_headers()
             self.wfile.write(image_data)
         except Exception as e:
